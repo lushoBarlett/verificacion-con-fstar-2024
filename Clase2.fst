@@ -107,11 +107,12 @@ let ex_falso (#a:Type) (f : falso) : a =
 
 (* Demostrar *)
 let neu1 (#a:Type) : oo a falso -> a =
-  admit()
+  function
+  | Inl x -> x
+  | Inr f -> ex_falso f
 
 (* Demostrar *)
-let neu2 (#a:Type) : a -> oo a falso =
-  admit()
+let neu2 (#a:Type) : a -> oo a falso = Inl
 
 (* Distribución de `yy` sobre `oo`, en ambas direcciones *)
 let distr_yyoo_1 (#a #b #c : Type)
@@ -127,51 +128,92 @@ let distr_yyoo_1 (#a #b #c : Type)
 let distr_yyoo_2 (#a #b #c : Type)
   : oo (yy a b) (yy a c) -> yy a (oo b c)
 =
-  admit()
+  function
+  | Inl (x, y) -> (x, Inl y)
+  | Inr (x, z) -> (x, Inr z)
 
 let distr_ooyy_1 (#a #b #c : Type)
   : oo a (yy b c) -> yy (oo a b) (oo a c)
 =
-  admit()
+  function
+  | Inl x -> (Inl x, Inl x)
+  | Inr (y, z) -> (Inr y, Inr z)
 
 let distr_ooyy_2 (#a #b #c : Type)
   : yy (oo a b) (oo a c) -> oo a (yy b c)
 =
-  admit()
+  fun (xy, xz) ->
+  match xy, xz with
+  | Inl x, _ -> Inl x
+  | _, Inl x -> Inl x
+  | Inr y, Inr z -> Inr (y, z)
 
 let modus_tollens (#a #b : Type)
   : (a -> b) -> (no b -> no a)
 =
-  admit()
+  fun f ->
+    fun fb ->
+      fun a -> fb (f a) // a -> b + b -> falso = a -> falso
   (* Vale la recíproca? *)
+  // no vale la recíproba porque construir (a -> b) a partir de (b -> falso) -> (a -> falso)
+  // es imposible, dado que swappear el tipo del argumento de una flecha no se puede
+  // las funciones ni siquiera son llamables dado que retornan un tipo sin habitantes
 
 let modus_tollendo_ponens (#a #b : Type)
   : (oo a b) -> (no a -> b)
 =
-  admit()
+  function
+  | Inl x -> fun f -> f x // tiene tipo b por explosión
+  | Inr y -> fun _ -> y   // tiene tipo b naturalmente
   (* Vale la recíproca? *)
+  // tengo que construir un a, o un b
+  // para construir un b, tendría que llamar a una cierta
+  // función que dada una función (a -> falso) me devuelve un b
+  // para eso necesito darle una función de (a -> falso)
+  // pero no puedo construir ninguna
+  // o sea que debería construir un a, pero tampoco puedo porque
+  // todo lo que me dan es una función que toma la función que toma a
 
 let modus_ponendo_tollens (#a #b : Type)
   : no (yy a b) -> (a -> no b)
 =
-  admit()
+  fun ftuplexy ->
+    fun x ->
+      fun y ->
+        ftuplexy (x, y)
   (* Vale la recíproca? *)
+
+let modus_ponendo_tollens_rec (#a #b : Type)
+  : (a -> no b) -> no (yy a b)
+=
+  fun fxy ->
+    fun (x, y) -> fxy x y
 
 (* Declare y pruebe, si es posible, las leyes de De Morgan
 para `yy` y `oo`. ¿Son todas intuicionistas? *)
 
 let demorgan1_ida (#a #b : Type) : oo (no a) (no b) -> no (yy a b) =
   admit()
+  // nunca voy a tener un testigo para a y b simultáneamente
+  // una función que toma (a, b) nunca puede ser construida
 
 let demorgan1_vuelta (#a #b : Type) : no (yy a b) -> oo (no a) (no b) =
   admit()
+  // para poder devolver falso, necesito pasarle a la función que me dan
+  // como argumento tanto un a como un b, pero solo puedo construir
+  // un testigo de tomar un a, o un testigo de tomar un b, me falta siempre uno
 
 let demorgan2_ida (#a #b : Type) : yy (no a) (no b) -> no (oo a b) =
-  admit()
+  fun (fx, fy) ->
+    function
+    | Inl x -> fx x
+    | Inr y -> fy y
 
 let demorgan2_vuelta (#a #b : Type) : no (oo a b) -> yy (no a) (no b) =
-  admit()
-
+  fun fxoy -> (
+    (fun x -> fxoy (Inl x)),
+    (fun y -> fxoy (Inr y))
+  )
 
  (* P y no P no pueden valer a la vez. *)
 let no_contradiccion (#a:Type) : no (yy a (no a)) =
@@ -189,30 +231,43 @@ let elim_triple_neg (#a:Type) : no (no (no a)) -> no a =
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl1 (p q : Type) : (p -> q) -> oo (no p) q =
   admit()
+  // o construyo q (no puedo, no puedo construir p)
+  // o construyo una función p -> falso, que tampoco puedo hacer con lo que tengo
 
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl2 (p q : Type) : oo (no p) q -> (p -> q) =
-  admit()
+  function
+  | Inl fp -> fun p -> ex_falso (fp p)
+  | Inr q  -> fun _ -> q
 
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl3 (p q : Type) : no (p -> q) -> yy p (no q) =
   admit()
+  // en base a una función que toma una p -> q y me da falso
+  // tengo que construir un p, y una p -> falso
+  // desde el vamos no tengo nada para trabajar, ni p ni q, y tener falso no me sirve
 
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl4 (p q : Type) : yy p (no q) -> no (p -> q) =
-  admit()
+  fun (p, f_q_falso) ->
+    fun fpq ->
+      f_q_falso (fpq p)
 
 (* Tipos para axiomas clásicos *)
 type eliminacion_doble_neg = (#a:Type) -> no (no a) -> a
-type tercero_excluido = (a:Type) -> oo a (no a)
+type tercero_excluido = (#a:Type) -> oo a (no a)
 
 (* Ejercicio *)
-let lte_implica_edn (lte : tercero_excluido) (#a:Type) : eliminacion_doble_neg =
-  admit()
+// let lte_implica_edn (lte : tercero_excluido) (#a:Type) : eliminacion_doble_neg =
+//  function
+//  | Inl x  -> fun _ -> x
+//  | Inr fx -> fun ffx -> ex_falso (ffx fx)
+// CONSULTA: se me rompe este jej pero estoy seguro de que está bien
 
 (* Ejercicio. ¡Difícil! *)
-let edn_implica_lte (edn : eliminacion_doble_neg) (#a:Type) : oo a (no a) =
+let edn_implica_lte (edn : eliminacion_doble_neg) (#a:Type) : tercero_excluido =
   admit()
+// CONSULTA: no tengo ni la más puta idea
 
 (* Ejercicio: ¿la ley de Peirce es intuicionista o clásica?
 Demuestrelá sin axiomas para demostrar que es intuicionista,
@@ -221,8 +276,12 @@ es clásica. *)
 
 type peirce = (#a:Type) -> (#b:Type) -> ((a -> b) -> a) -> a
 
-let lte_implica_peirce (lte : tercero_excluido) : peirce =
-  admit()
+// let lte_implica_peirce (lte : tercero_excluido) : peirce =
+//   function
+//   | Inl x  -> fun _ -> x
+//   | Inl fx -> fun ffx -> ffx fx
+// CONSULTA: Por qué sin axiomas si me das el tercero excluido?
+// me pasa lo mismo de antes
 
 let peirce_implica_lte (pp : peirce) : tercero_excluido =
   admit()
