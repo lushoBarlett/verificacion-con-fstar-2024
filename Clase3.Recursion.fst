@@ -77,7 +77,7 @@ let rec sum (xs:list int) : int =
   // La llamada recursiva achica la lista, usando la functión automática `tl`
 
 (* Prefijo de una lista *)
-let rec init #a (xs : list a{Cons? xs}) : list a =
+let rec init #a (xs : list a{Cons? xs}) : (inxs:list a{List.Tot.length inxs = List.Tot.length xs - 1}) =
   match xs with
   | [x] -> []
   | x::xs -> x :: init xs
@@ -88,15 +88,14 @@ let rec last #a (xs : list a{Cons? xs}) : a =
   | [x] -> x
   | _::xs -> last xs
 
-[@@expect_failure]
-let rec sum' (xs:list int) : Tot int =
+let rec sum' (xs:list int) : Tot int (decreases List.Tot.length xs) =
   (* Por qué *no* se acepta esta función? Termina? *)
   if Nil? xs
   then 0
   else last xs + sum' (init xs)
-  // No se puede probar que init, a pesar de que termina,
-  // achica la lista en todos los casos.
-  // Deberíamos probar que init xs << xs aparte
+  // No demuestra que init, a pesar de que termina, achica la lista.
+  // Deberíamos probar que length (init xs) << length xs aparte
+  // esto lo hacemos pidiendo la prueba en un refinamiento de init
 
 (* La función de Ackermann se chequea correctamente 
 con la métrica por defecto. *)
