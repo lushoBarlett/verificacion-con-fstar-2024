@@ -18,26 +18,11 @@ let lift (ty : l_ty) : Type =
   | Int -> int
   | Bool -> bool
 
-let rec eval_int : expr Int -> Tot int =
-  fun e ->
+val eval (#ty:l_ty) (e : expr ty) : Tot (lift ty)
+let rec eval (#ty:l_ty) (e : expr ty) : Tot (lift ty) (decreases e) =
   match e with
   | EInt n -> n
-  | EAdd e1 e2 -> eval_int e1 + eval_int e2
-  | EIf b e1 e2 -> if eval_bool b then eval_int e1 else eval_int e2
-and eval_bool : expr Bool -> Tot bool =
-  fun e ->
-  match e with
   | EBool b -> b
-  | EEq e1 e2 -> eval_int e1 = eval_int e2
-  | EIf b e1 e2 -> if eval_bool b then eval_bool e1 else eval_bool e2
-
-val eval (#ty:l_ty) (e : expr ty) : Tot (lift ty)
-
-let eval (#ty:l_ty) (e : expr ty) : Tot (lift ty) =
-  match ty with
-  | Int -> eval_int e
-  | Bool -> eval_bool e
-
-// CONSULTA: por qué la versión con una sola llamada recursiva
-// no puede probar terminación? Hay una forma de hacerlo con una sola?
-// está mal hacerlo así? hay valores no representables?
+  | EAdd e1 e2 -> eval e1 + eval e2
+  | EEq e1 e2 -> eval e1 = eval e2
+  | EIf b e1 e2 -> if eval b then eval e1 else eval e2
