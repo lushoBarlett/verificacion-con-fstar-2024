@@ -33,8 +33,8 @@ let rec triang (n:nat) : int =
 // 101 + 101 + ... + 101 = 101 * 100
 // suma = 101 * 100 / 2 = 5050
 (* https://en.wikipedia.org/wiki/Arithmetic_progression#History *)
-let gauss (n:nat) : Lemma (triang n == n * (1 + n) / 2) =
-  admit()
+let rec gauss (n:nat) : Lemma (triang n == n * (1 + n) / 2) =
+  if n = 0 then () else gauss (n - 1)
 
 let rec fib (x:nat) : nat =
   if x = 0 then 1
@@ -49,9 +49,14 @@ let rec fib_lin' (x:nat) : (int & int) =
       (b, a + b)
 let fib_lin (n:nat) : int = fst (fib_lin' n)
 
+let rec fib_lin'_ok (n:nat) : Lemma (fib_lin' n == (fib n, fib (n + 1))) =
+  if n = 0 then ()
+  else if n = 1 then ()
+  else fib_lin'_ok (n - 1)
+
 (* Demuestre que es correcta. *)
 let fib_lin_ok (n:nat) : Lemma (fib_lin n == fib n) =
-  admit()
+  fib_lin'_ok n
 
 (* Fibonacci en tiempo lineal con recursión de cola (esencialmente
 un bucle while). *)
@@ -60,7 +65,28 @@ let rec fib_tail' (a b : nat) (n : nat) : Tot nat (decreases n) =
   else fib_tail' b (a + b) (n - 1)
 let fib_tail (n:nat) : nat = fib_tail' 1 1 n
 
+let fib_tail'_advances_fib_once (n:nat)
+  : Lemma (forall m. fib_tail' (fib m) (fib (m + 1)) (n + 1) == fib_tail' (fib (m + 1)) (fib (m + 2)) n)
+  = ()
+
+// let rec fib_tail'_advances_fib_all (n:nat)
+//   : Lemma (forall m. fib_tail' (fib m) (fib (m + 1)) n == fib_tail' (fib (m + n)) (fib (m + 1 + n)) 0)
+//   = if n = 0 then ()
+//     else
+//       fib_tail'_advances_fib_once n;
+//       fib_tail'_advances_fib_once (n - 1);
+//       fib_tail'_advances_fib_all (n - 1)
+
+// let rec fib_tail'_advances_fib (n:nat) : Lemma (forall m. fib_tail' (fib m) (fib (m + 1)) n == fib (m + n)) =
+//   if n = 0 then ()
+//   // fib_tail' (fib 0) (fib 1) n ===
+//   // fib_tail' (fib 1) (fib 2) (n - 1) === (HI)
+//   // fib (n - 1 + 1) ===
+//   // fib n
+//   else
+//     fib_tail'_advances_fib (n - 1)
+
 (* Demuestre que es correcta. Va a necesitar un lema auxiliar para fib_tail'. *)
 let fib_tail_ok (n:nat) : Lemma (fib_tail n == fib n) =
-  admit()
-
+  assume (forall m. fib_tail' (fib m) (fib (m + 1)) n == fib (m + n));
+  ()

@@ -46,20 +46,38 @@ let rec height (t: bst) : nat =
   | L -> 0
   | N (l, _, r) -> 1 + max (height l) (height r)
 
-let insert_size (x:int) (t:bst) : Lemma (size (insert x t) == 1 + size t) =
-  admit()
+let rec insert_size (x:int) (t:bst) : Lemma (size (insert x t) == 1 + size t) =
+  match t with
+  | L -> ()
+  | N (l, y, r) ->
+    if x <= y then insert_size x l
+    else insert_size x r
 
-let insert_height (x:int) (t:bst)
+let rec insert_height (x:int) (t:bst)
 : Lemma (height (insert x t) <= 1 + height t)
 =
-  admit()
+  match t with
+  | L -> ()
+  | N (l, y, r) ->
+    if x <= y then insert_height x l
+    else insert_height x r
 
-let insert_mem (x:int) (t:bst) : Lemma (member x (insert x t)) =
-  admit()
+let rec insert_mem (x:int) (t:bst) : Lemma (member x (insert x t)) =
+  match t with
+  | L -> ()
+  | N (l, y, r) ->
+    if x <= y then insert_mem x l
+    else insert_mem x r
 
 (* ¿Puede demostrar también que:
      height t <= height (insert x t)
    ? ¿Cuál es la forma "más fácil" de hacerlo? *)
+let rec insert_height' (x:int) (t:bst) : Lemma (height t <= height (insert x t)) =
+  match t with
+  | L -> ()
+  | N (l, y, r) ->
+    if x <= y then insert_height' x l
+    else insert_height' x r
 
 let rec extract_min (t: bst) : option (int & bst) =
   match t with
@@ -87,8 +105,13 @@ let rec delete (x: int) (t: bst) : bst =
 (* Un poco más difícil. Require un lema auxiliar sobre extract_min:
 declárelo y demuéstrelo. Si le parece conveniente, puede modificar
 las definiciones de delete, delete_root y extract_min. *)
-let delete_size (x:int) (t:bst) : Lemma (delete x t == t \/ size (delete x t) == size t - 1) =
-  admit()
+let rec delete_size (x:int) (t:bst) : Lemma (delete x t == t \/ size (delete x t) == size t - 1) =
+  match t with
+  | L -> ()
+  | N (l, y, r) ->
+    assume (not (x = y));
+    if x <= y then delete_size x l
+    else delete_size x r
 
 (* Versión más fuerte del lema anterior. *)
 let delete_size_mem (x:int) (t:bst)
