@@ -65,28 +65,15 @@ let rec fib_tail' (a b : nat) (n : nat) : Tot nat (decreases n) =
   else fib_tail' b (a + b) (n - 1)
 let fib_tail (n:nat) : nat = fib_tail' 1 1 n
 
-let fib_tail'_advances_fib_once (n:nat)
-  : Lemma (forall m. fib_tail' (fib m) (fib (m + 1)) (n + 1) == fib_tail' (fib (m + 1)) (fib (m + 2)) n)
-  = ()
-
-// let rec fib_tail'_advances_fib_all (n:nat)
-//   : Lemma (forall m. fib_tail' (fib m) (fib (m + 1)) n == fib_tail' (fib (m + n)) (fib (m + 1 + n)) 0)
-//   = if n = 0 then ()
-//     else
-//       fib_tail'_advances_fib_once n;
-//       fib_tail'_advances_fib_once (n - 1);
-//       fib_tail'_advances_fib_all (n - 1)
-
-// let rec fib_tail'_advances_fib (n:nat) : Lemma (forall m. fib_tail' (fib m) (fib (m + 1)) n == fib (m + n)) =
-//   if n = 0 then ()
-//   // fib_tail' (fib 0) (fib 1) n ===
-//   // fib_tail' (fib 1) (fib 2) (n - 1) === (HI)
-//   // fib (n - 1 + 1) ===
-//   // fib n
-//   else
-//     fib_tail'_advances_fib (n - 1)
+let rec fib_tail'_advances_fib (n:nat) (m:nat): Lemma (fib_tail' (fib m) (fib (m + 1)) n == fib (m + n)) =
+  if n = 0 then ()
+  else
+    // fib_tail' (fib m) (fib (m + 1)) n ===
+    // fib_tail' (fib (m + 1)) (fib (m + 2)) (n - 1) === (HI)
+    // fib (m + n - 1) ===
+    // fib (m + n)
+    fib_tail'_advances_fib (n - 1) (m + 1)
 
 (* Demuestre que es correcta. Va a necesitar un lema auxiliar para fib_tail'. *)
 let fib_tail_ok (n:nat) : Lemma (fib_tail n == fib n) =
-  assume (forall m. fib_tail' (fib m) (fib (m + 1)) n == fib (m + n));
-  ()
+  fib_tail'_advances_fib n 0

@@ -102,6 +102,29 @@ let rec delete (x: int) (t: bst) : bst =
     else if x > y then N (l, y, delete x r)
     else delete_root t
 
+let rec extract_min_result (t:bst) : Lemma (extract_min t = None <==> t = L) =
+  match t with
+  | L -> ()
+  | N (L, _, _) -> ()
+  | N (l, _, r) ->
+    match extract_min l with
+    | None -> extract_min_result l
+    | Some (_, l') -> ()
+
+let rec extract_min_size (t:bst) : Lemma (requires N? t) (ensures Some? (extract_min t) && size (snd (Some?.v (extract_min t))) = size t - 1) =
+  let N (l, _, r) = t in
+  match extract_min l with
+  | None -> extract_min_result l
+  | Some (_, l') -> extract_min_size l
+
+(* ¿Qué lema auxiliar necesitaría para demostrar delete_root_size? *)
+
+let delete_root_size (t:bst) : Lemma (requires N? t) (ensures size (delete_root t) = size t - 1) =
+  let N (l, _, r) = t in
+  match extract_min r with
+  | None -> extract_min_result r
+  | Some (_, r') -> extract_min_size r
+
 (* Un poco más difícil. Require un lema auxiliar sobre extract_min:
 declárelo y demuéstrelo. Si le parece conveniente, puede modificar
 las definiciones de delete, delete_root y extract_min. *)
@@ -109,20 +132,39 @@ let rec delete_size (x:int) (t:bst) : Lemma (delete x t == t \/ size (delete x t
   match t with
   | L -> ()
   | N (l, y, r) ->
-    assume (not (x = y));
-    if x <= y then delete_size x l
-    else delete_size x r
+    if x < y then delete_size x l
+    else if x > y then delete_size x r
+    else delete_root_size t
 
 (* Versión más fuerte del lema anterior. *)
-let delete_size_mem (x:int) (t:bst)
+let rec delete_size_mem (x:int) (t:bst)
 : Lemma (requires member x t)
-        (ensures size (delete x t) == size t - 1)
-= admit()
+        (ensures size (delete x t) == size t - 1) =
+  let N (l, y, r) = t in
+  if x < y then delete_size_mem x l
+  else if x > y then delete_size_mem x r
+  else delete_root_size t
 
-let to_list_length (t:bst) : Lemma (length (to_list t) == size t) =
-  admit()
+let rec length_append (xs ys: list int) : Lemma (length (xs @ ys) == length xs + length ys) =
+  match xs with
+  | [] -> ()
+  | x::xs' -> length_append xs' ys
+
+let rec to_list_length (t:bst) : Lemma (length (to_list t) == size t) =
+  match t with
+  | L -> ()
+  | N (l, x, r) ->
+    to_list_length l;
+    to_list_length r;
+    length_append (to_list l) [x];
+    length_append (to_list l @ [x]) (to_list r)
 
 (* Contestar en texto (sin intentar formalizar):
     ¿Es cierto que `member x (insert y (insert x t))`? ¿Cómo se puede probar?
     ¿Es cierto que `delete x (insert x t) == t`?
+
+    La primera es verdad, porque insertar un elemento, si no se elimina, sigue estando en el árbol.
+    Se puede probar por con el lema de que insertar un elemento no elimina los demás.
+    La segunda no necesariamente es verdad. Una inserción puede cambiar la estructura del árbol.
+    No tenemos noción de "igualdad" de árboles.
 *)
