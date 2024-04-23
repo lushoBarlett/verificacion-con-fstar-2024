@@ -38,25 +38,25 @@ let rec constant_fold (#ty:l_ty) (e : expr ty) : Tot (expr ty) (decreases e) =
   | EAdd me ne ->
     let me' = constant_fold me in
     let ne' = constant_fold ne in
-    match (me', ne') with
-    | EInt m, EInt n -> EInt (m + n)
-    | _ -> EAdd me' ne'
+    (match (me', ne') with
+      | EInt m, EInt n -> EInt (m + n)
+      | _ -> EAdd me' ne')
 
   | EEq me ne ->
     let me' = constant_fold me in
     let ne' = constant_fold ne in
-    match (me', ne') with
-    | EInt m, EInt n -> EBool (m = n)
-    | _ -> EEq me' ne'
+    (match (me', ne') with
+      | EInt m, EInt n -> EBool (m = n)
+      | _ -> EEq me' ne')
 
   | EIf c t e ->
     let c' = constant_fold c in
     let t' = constant_fold t in
     let e' = constant_fold e in
-    match c' with
-    | EBool true -> t'
-    | EBool false -> e'
-    | _ -> EIf c' t' e'
+    (match c' with
+      | EBool true -> t'
+      | EBool false -> e'
+      | _ -> EIf c' t' e')
 
   | _ -> e
 
