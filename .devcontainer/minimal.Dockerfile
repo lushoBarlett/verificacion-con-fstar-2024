@@ -1,4 +1,4 @@
-FROM ubuntu:23.10
+FROM ubuntu:latest
 
 SHELL ["/bin/bash", "-c"]
 
@@ -16,7 +16,11 @@ RUN apt-get update \
       sudo \
       python3 \
       python-is-python3 \
+<<<<<<< HEAD
       python3-distutils \
+=======
+      libicu70 \
+>>>>>>> 04a54b9 (comienzo práctica 8 (ta dificil))
       libgmp-dev \
       opam \
     && apt-get clean -y
