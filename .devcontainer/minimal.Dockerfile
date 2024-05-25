@@ -1,4 +1,4 @@
-FROM ubuntu:23.10
+FROM ubuntu:latest
 
 SHELL ["/bin/bash", "-c"]
 
@@ -16,6 +16,7 @@ RUN apt-get update \
       sudo \
       python3 \
       python-is-python3 \
+      libicu70 \
       libgmp-dev \
       opam \
     && apt-get clean -y
@@ -56,7 +57,7 @@ RUN wget -nv https://github.com/Z3Prover/z3/releases/download/Z3-4.8.5/z3-4.8.5-
 #  && ln -s $(realpath bin/fstar.exe) $HOME/bin/fstar.exe
 
 # Get F* release and extract into home
-ARG FSTAR_RELEASE_LINK=https://github.com/FStarLang/FStar/releases/download/v2024.01.13/fstar_2024.01.13_Linux_x86_64.tar.gz
+ARG FSTAR_RELEASE_LINK=https://github.com/FStarLang/FStar/releases/download/v2023.04.25/fstar_2023.04.25_Linux_x86_64.tar.gz
 RUN wget -nv $FSTAR_RELEASE_LINK \
  && tar xzf fstar_*.tar.gz -C $HOME \
  && ln -s $(realpath fstar/bin/fstar.exe) $HOME/bin/fstar.exe
