@@ -16,15 +16,7 @@ RUN apt-get update \
       sudo \
       python3 \
       python-is-python3 \
-<<<<<<< HEAD
-      libicu70 \
-=======
-<<<<<<< HEAD
       python3-distutils \
-=======
-      libicu70 \
->>>>>>> 04a54b9 (comienzo práctica 8 (ta dificil))
->>>>>>> mtzguido-main
       libgmp-dev \
       opam \
     && apt-get clean -y
