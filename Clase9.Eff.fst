@@ -50,7 +50,7 @@ let rec gcd (x y : nat) : Tot nat (decreases %[y; x]) =
 // CONSULTA: tienen que ser nat, o pueden ser int de alguna manera?
 
 (* Una caché para gcd *)
-let cache_elem_t = (x:nat) & (y:nat) & (r:nat{r == gcd x y})
+let cache_elem_t = x:nat & y:nat & r:nat{r == gcd x y}
 let cache : ref (list cache_elem_t) = alloc []
 
 exception Empty
@@ -74,8 +74,8 @@ let memo_gcd (x y : nat) : ML (r:int{r == gcd x y}) =
   | Some r -> r
   | None ->
     let r = gcd x y in
-    let celem = magic() <: cache_elem_t in
-    cache := celem :: !cache; // CONSULTA: por qué no me anda (x, y, r)
+    let celem = (| x, y, r |) <: cache_elem_t in
+    cache := celem :: !cache;
     r
 
 exception Neg
