@@ -155,24 +155,42 @@ let modus_tollens (#a #b : Type)
     fun fb ->
       fun a -> fb (f a) // a -> b + b -> falso = a -> falso
   (* Vale la recíproca? *)
-  // no vale la recíproba porque construir (a -> b) a partir de (b -> falso) -> (a -> falso)
-  // es imposible, dado que swappear el tipo del argumento de una flecha no se puede
-  // las funciones ni siquiera son llamables dado que retornan un tipo sin habitantes
+
+let modus_tollens_rec (#a #b : Type)
+  : (no b -> no a) -> (a -> b)
+=
+  fun fnobnoa ->
+    fun a ->
+      let fnob = fun b -> magic() in
+      let fnoa = fnobnoa (fnob) in
+      let b = ex_falso (fnoa a) in b
+  // no vale la recíproba porque debo construir un tipo (b -> falso) y no puedo
+  // construir una función que retorne falso, desde cero, ya que falso no tiene habitantes
 
 let modus_tollendo_ponens (#a #b : Type)
   : (oo a b) -> (no a -> b)
 =
   function
-  | Inl x -> fun f -> f x // tiene tipo b por explosión
-  | Inr y -> fun _ -> y   // tiene tipo b naturalmente
+  | Inl x -> fun f -> ex_falso (f x) // tiene tipo b por explosión
+  | Inr y -> fun _ -> y              // tiene tipo b naturalmente
   (* Vale la recíproca? *)
+
+let modus_tollendo_ponens_rec (#a #b : Type)
+  : (no a -> b) -> oo a b
+=
+  fun fnoab ->
+    let fnoa = fun a -> magic() in
+    let b = fnoab fnoa in
+    Inr b
+  // fun fnoab ->
+  //   let a = magic() in
+  //   Inl a
   // tengo que construir un a, o un b
   // para construir un b, tendría que llamar a una cierta
   // función que dada una función (a -> falso) me devuelve un b
   // para eso necesito darle una función de (a -> falso)
-  // pero no puedo construir ninguna
-  // o sea que debería construir un a, pero tampoco puedo porque
-  // todo lo que me dan es una función que toma la función que toma a
+  // pero no puedo construir ninguna. Tampoco puedo construir un a porque
+  // todo lo que me dan es una función que toma (a -> falso)
 
 let modus_ponendo_tollens (#a #b : Type)
   : no (yy a b) -> (a -> no b)
@@ -193,12 +211,17 @@ let modus_ponendo_tollens_rec (#a #b : Type)
 para `yy` y `oo`. ¿Son todas intuicionistas? *)
 
 let demorgan1_ida (#a #b : Type) : oo (no a) (no b) -> no (yy a b) =
-  admit()
-  // nunca voy a tener un testigo para a y b simultáneamente
-  // una función que toma (a, b) nunca puede ser construida
+  function
+  | Inl fnoa -> fun (x, _) -> ex_falso (fnoa x)
+  | Inr fnob -> fun (_, y) -> ex_falso (fnob y)
 
 let demorgan1_vuelta (#a #b : Type) : no (yy a b) -> oo (no a) (no b) =
-  admit()
+  fun fnoab ->
+    let fnoa = fun a -> fnoab (a, magic()) in
+    Inl fnoa
+  // fun fnoab ->
+  //   let fnob = fun b -> fnoab (magic(), b) in
+  //   Inr fnob
   // para poder devolver falso, necesito pasarle a la función que me dan
   // como argumento tanto un a como un b, pero solo puedo construir
   // un testigo de tomar un a, o un testigo de tomar un b, me falta siempre uno
@@ -230,9 +253,14 @@ let elim_triple_neg (#a:Type) : no (no (no a)) -> no a =
 
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl1 (p q : Type) : (p -> q) -> oo (no p) q =
-  admit()
-  // o construyo q (no puedo, no puedo construir p)
-  // o construyo una función p -> falso, que tampoco puedo hacer con lo que tengo
+  fun fpq ->
+    let fnop = fun p -> magic() in
+    Inl fnop 
+  // fun fpq ->
+  //   let q = fpq (magic()) in
+  //   Inr q
+  // o construyo q (no puedo, porque no tengo p)
+  // o construyo una función p -> falso, que tampoco puedo hacer
 
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl2 (p q : Type) : oo (no p) q -> (p -> q) =
@@ -242,32 +270,39 @@ let ley_impl2 (p q : Type) : oo (no p) q -> (p -> q) =
 
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl3 (p q : Type) : no (p -> q) -> yy p (no q) =
-  admit()
+  fun fnopq ->
+    let p = magic() in
+    let fnoq = fun q -> fnopq (fun _ -> q) in
+    (p, fnoq)
   // en base a una función que toma una p -> q y me da falso
-  // tengo que construir un p, y una p -> falso
-  // desde el vamos no tengo nada para trabajar, ni p ni q, y tener falso no me sirve
+  // tengo que construir un p, y una q -> falso
+  // no hay forma de construir p que quede en el contexto
 
 (* Ejercicio. ¿Se puede en lógica intuicionista? *)
 let ley_impl4 (p q : Type) : yy p (no q) -> no (p -> q) =
-  fun (p, f_q_falso) ->
+  fun (p, fnoq) ->
     fun fpq ->
-      f_q_falso (fpq p)
+      fnoq (fpq p)
 
 (* Tipos para axiomas clásicos *)
 type eliminacion_doble_neg = (#a:Type) -> no (no a) -> a
 type tercero_excluido = (#a:Type) -> oo a (no a)
 
 (* Ejercicio *)
-// let lte_implica_edn (lte : tercero_excluido) (#a:Type) : eliminacion_doble_neg =
-//  function
-//  | Inl x  -> fun _ -> x
-//  | Inr fx -> fun ffx -> ex_falso (ffx fx)
-// CONSULTA: se me rompe este jej pero estoy seguro de que está bien
+let lte_implica_edn (lte : tercero_excluido) (#a:Type) : eliminacion_doble_neg =
+  fun (#a:Type) ->
+    match lte #a with
+    | Inl a'   -> fun _ -> a'
+    | Inr fnoa -> fun fnofnoa -> fnofnoa fnoa
 
 (* Ejercicio. ¡Difícil! *)
 let edn_implica_lte (edn : eliminacion_doble_neg) (#a:Type) : tercero_excluido =
-  admit()
-// CONSULTA: no tengo ni la más puta idea
+  fun (#a:Type) ->
+    let neg: no (yy (no a) (no (no a))) = fun (x, f) -> f x in // completamos
+    let impl: no (oo a (no a)) -> yy (no a) (no (no a)) = demorgan2_vuelta in // lo único que nos sale aplicar en este tipo
+    let double_neg: no (no (oo a (no a))) = modus_tollens impl neg in // a -> b && (no b) yo te doy (no a). a === no (oo x (no x))
+    edn double_neg // no (no <loquesea>) se puede construir siempre!
+    // Estos comentarios se leen al revés!
 
 (* Ejercicio: ¿la ley de Peirce es intuicionista o clásica?
 Demuestrelá sin axiomas para demostrar que es intuicionista,
@@ -276,12 +311,13 @@ es clásica. *)
 
 type peirce = (#a:Type) -> (#b:Type) -> ((a -> b) -> a) -> a
 
-// let lte_implica_peirce (lte : tercero_excluido) : peirce =
-//   function
-//   | Inl x  -> fun _ -> x
-//   | Inl fx -> fun ffx -> ffx fx
-// CONSULTA: Por qué sin axiomas si me das el tercero excluido?
-// me pasa lo mismo de antes
+let lte_implica_peirce (lte : tercero_excluido) : peirce =
+  fun (#a:Type) -> fun (#b:Type) -> fun f ->
+    match lte #a with
+    | Inl a  -> a
+    | Inr fnoa -> f (fun a -> ex_falso (fnoa a))
 
 let peirce_implica_lte (pp : peirce) : tercero_excluido =
-  admit()
+  fun (#a:Type) ->
+    let ff: (oo a (no a) -> a) -> oo a (no a) = magic() in
+    pp ff
