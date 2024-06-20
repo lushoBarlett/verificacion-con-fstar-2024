@@ -91,9 +91,12 @@ be useful. You can navigate the dumps in the *fstar: goals* buffer with
 PgUp and PgDown.
 *)
 
-// let rec countdown (n:nat) : Tac unit = ???
-// 
-// let _ = run_tactic (fun () -> countdown 10)
+let rec countdown (n:nat) : Tac unit
+= 
+  dump (string_of_int n);
+  if n = 0 then () else countdown (n - 1)
+
+let _ = run_tactic (fun () -> countdown 10)
 
 (*
 Now that we have seen some trivial metaprograms, we can start writing
@@ -117,7 +120,6 @@ let constr (a b : prop) : Lemma (a ==> b ==> b /\ a) =
 (* Exercise: inspect the intermediate proof states to understand the
 proof. *)
 
-
 (*
 In the previous example, our proof was completed internally. However, F*
 allows for a mixed style of proof where we can leverage the SMT solver
@@ -139,10 +141,11 @@ let prod_even (n : int) : Lemma ((n * (n + 1)) % 2 == 0) =
   (* z3 needs some help *)
   FStar.Math.Lemmas.lemma_mod_mul_distr_l n (n+1) 2
 
-[@expect_failure] // this means the next definition is checked to *fail*!
 let test (a : nat) : Lemma (triang a + triang a == a * (a + 1)) =
-  //assert (triang a == (a * (a + 1) / 2));
-  //assert ((a * (a + 1)) % 2 == 0);
+  gauss a;
+  prod_even a;
+  assert (triang a == (a * (a + 1) / 2));
+  assert ((a * (a + 1)) % 2 == 0);
   ()
 
 (*

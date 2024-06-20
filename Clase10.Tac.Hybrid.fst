@@ -151,16 +151,16 @@ between syntactically equal terms can be solved by the `trefl` tactic.
 
 open FStar.Tactics.Canon
 
-(* let arith_test (a b c d e : int) = *)
-(*     assert *)
-(*         ((a+b+c+d + e%2)*(b+c+d+a) == *)
-(*                 a * a + b * b *)
-(*               + c * c + d * d *)
-(*               + e%2 * a + e%2 * b *)
-(*               + e%2 * c + e%2 * d *)
-(*               + a * b + a * b *)
-(*               + a * c + a * c *)
-(*               + a * d + a * d *)
-(*               + b * c + b * c *)
-(*               + b * d + b * d *)
-(*               + c * d + c * d) *)
+let arith_test (a b c d e : int) =
+    assert
+        ((a+b+c+d + e%2)*(b+c+d+a) ==
+                a * a + b * b
+              + c * c + d * d
+              + e%2 * a + e%2 * b
+              + e%2 * c + e%2 * d
+              + a * b + a * b
+              + a * c + a * c
+              + a * d + a * d
+              + b * c + b * c
+              + b * d + b * d
+              + c * d + c * d) by (canon ())

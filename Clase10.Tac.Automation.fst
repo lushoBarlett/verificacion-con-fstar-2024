@@ -118,15 +118,29 @@ let ea7' (p q r : prop) =
 (* Exercise: the `conjt` fails for goals such as the following. Why? Can
 you fix it so it will solve it (and all previous goals?) *)
 
-//let eb1 (p q: prop) =
-//  assert ((p ==> q) ==> (p ==> q))
-//      by (conjt ())
+// CONSULTA: entiendo que quiere que resuelva manejar binders de implicancia
+// pero cómo haría eso?
+let eb1 (p q: prop) =
+  assert ((p ==> q) ==> (p ==> q))
+      by (let pq = implies_intro () in
+          let p = implies_intro () in
+          mapply (binder_to_term pq);
+          mapply (binder_to_term p);
+          qed ())
 
 (* Exercise: extend `conjt` to also solve disjunctions. (Hint: use
 `try..with` to backtrack.) It should solve all of the following goals.
 *)
 
-let disjt () : Tac unit = smt () (* but don't use SMT :) *)
+let rec disjt () : Tac unit =
+  let _ = l_intros () in
+  match cur_formula () with
+  | And _ _ -> seq split disjt
+  | Or _ _ -> (
+    try left (); disjt ()
+    with | _ -> right (); disjt ()
+  )
+  | _ -> (assumption (); qed ())
   
 let ea1'' (p q r : prop) =
   assert (p ==> q ==> r ==> p)

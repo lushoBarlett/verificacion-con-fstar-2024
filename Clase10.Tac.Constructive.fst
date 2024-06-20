@@ -188,16 +188,40 @@ a `qed ()` to check that the SMT solver is not used. *)
 
 let ex11 (p q : nat -> prop) =
   assert ((forall x. p x) ==> (forall x. p x \/ q x))
-      by (smt ())
+      by (let bf = implies_intro () in
+          let x = forall_intro () in
+          left ();
+          let px = instantiate (binder_to_term bf) x in
+          hyp px;
+          qed ())
 
 let ex12 (p q : nat -> prop) =
   assert ((forall x. p x /\ q x) ==> (forall x. p x))
-      by (smt ())
+      by (let bf = implies_intro () in
+          let x = forall_intro () in
+          let pxqx = instantiate (binder_to_term bf) x in
+          let (px, _) = destruct_and (binder_to_term pxqx) in
+          hyp px;
+          qed ())
 
-let ex13 (p q : nat -> prop) =
+// Consulta: ¿Por qué fallaba con nat? ¿Hay que hacerlo con nat?
+let ex13 (p q : int -> prop) =
   assert ((forall x. p x /\ q x) ==> (exists x. p x \/ q x))
-      by (tadmit ()) // SMT is bad with existentials, just admit
+      by (let bf = implies_intro () in
+          witness (`0);
+          left ();
+          let hx = instantiate (binder_to_term bf) (`0) in
+          let (px, _) = destruct_and (binder_to_term hx) in
+          hyp px;
+          qed ())
 
 let ex14 (a:Type) (p q : a -> prop) =
   assert ((forall x. p x ==> q x) ==> (forall x. p x) ==> (forall x. q x))
-      by (smt ())
+      by (let allptoq = implies_intro () in
+          let allp = implies_intro () in
+          let x = forall_intro () in
+          let ptoqx = instantiate (binder_to_term allptoq) x in
+          let px = instantiate (binder_to_term allp) x in
+          mapply (binder_to_term ptoqx);
+          mapply (binder_to_term px);
+          qed ())
