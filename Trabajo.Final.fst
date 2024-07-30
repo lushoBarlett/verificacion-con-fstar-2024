@@ -268,6 +268,40 @@ let product_is_linear_2 (#n: pos) (u: operator n) (a: complex) (v: qbit #n)
 let product_distributes_over_scalar_sum (#n: pos) (a b: complex) (v: qbit #n)
   : Lemma ((a `mscalar` v) `madd` (b `mscalar` v) == (a `cadd` b) `mscalar` v) = admit()
 
+// This is also an axiom of the reals
+let existence_of_multiplicative_inverse (a: real)
+  : Lemma (requires a <> 0.0R) (ensures a *. (1.0R /. a) == 1.0R) = admit ()
+
+let specific_addition ()
+  : Lemma (cinvsqrt2 `cadd` cinvsqrt2 == csqrt2)
+= calc (==) {
+    (invsqrt2 +. invsqrt2, 0.0R +. 0.0R);
+    == { () }
+    (2.0R *. invsqrt2, 0.0R);
+    == { () }
+    (sqrt_2 *. sqrt_2 *. invsqrt2, 0.0R);
+    == { mult_associates sqrt_2 sqrt_2 invsqrt2 }
+    (sqrt_2 *. (sqrt_2 *. invsqrt2), 0.0R);
+    == { () }
+    (sqrt_2 *. (sqrt_2 *. (1.0R /. sqrt_2)), 0.0R);
+    == { existence_of_multiplicative_inverse sqrt_2 }
+    (sqrt_2 *. 1.0R, 0.0R);
+    == { () }
+    (sqrt_2, 0.0R);
+  }
+
+let specific_absolute_value ()
+  : Lemma (cabs csqrt2 == sqrt_2)
+= calc (==) {
+    cabs csqrt2;
+    == { () }
+    sqrt (sqrt_2 *. sqrt_2);
+    == { () }
+    sqrt (2.0R);
+    == { admit() } // don't know why this doesn't work
+    sqrt_2;
+  }
+
 let no_cloning_theorem_contradiction (u: operator 2)
   : Lemma (requires clona_todo_2 u /\ unitary_matrices_preserve_norm u)
           (ensures False)
@@ -276,9 +310,6 @@ let no_cloning_theorem_contradiction (u: operator 2)
   assume (norm (zero `tensorv` zero) == 1.0R);
   assume (norm (zero `tensorv` one) == 1.0R);
   assume (norm (zero `tensorv` one) == 1.0R);
-  assume (1.0R <> sqrt 2.0R);
-  assume (cinvsqrt2 `cadd` cinvsqrt2 == csqrt2);
-  assume (cabs csqrt2 == sqrt 2.0R);
   calc (==) {
     1.0R;
 
@@ -315,7 +346,7 @@ let no_cloning_theorem_contradiction (u: operator 2)
     == { product_distributes_over_scalar_sum #2 cinvsqrt2 cinvsqrt2 (zero `tensorv` zero) }
     norm ((cinvsqrt2 `cadd` cinvsqrt2) `mscalar` (zero `tensorv` zero));
 
-    == { () }
+    == { specific_addition () }
     norm (csqrt2 `mscalar` (zero `tensorv` zero));
 
     == { vnorm_distributes_over_scalars #2 csqrt2 (zero `tensorv` zero) }
@@ -324,8 +355,8 @@ let no_cloning_theorem_contradiction (u: operator 2)
     == { () }
     (cabs csqrt2) *. 1.0R;
 
-    == { () }
-    sqrt 2.0R;
+    == { specific_absolute_value () }
+    sqrt_2;
   }
 
 let no_cloning_theorem (#n:pos) (u: operator 2)
