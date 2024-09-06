@@ -1,5 +1,8 @@
 module Trabajo.Final
 
+module SP = FStar.Seq.Permutation
+module SB = FStar.Seq.Base
+
 open FStar.Mul
 open FStar.Real
 open FStar.Matrix
@@ -182,9 +185,11 @@ let cmult_associative (z w x: complex)
 let c_multiplication_is_comm_monoid: cm complex c_is_equiv
   = CM cone cmult (fun _ -> ()) cmult_associative (fun _ _ -> ()) (fun _ _ _ _ -> ())
 
+let mequals (#m #n: pos) (ma mb: matrix complex m n) = (matrix_equiv c_is_equiv m n).eq ma mb
+
 let madd (#m #n: pos) (ma mb: matrix complex m n) = ma `matrix_add #_ #_ #m #n c_addition_is_comm_monoid` mb
 
-type qbit (#n: pos) = matrix complex (pow2 n) 1
+type qbit (n: pos) = matrix complex (pow2 n) 1
 
 type operator (n:pos) = matrix complex (pow2 n) (pow2 n)
 
@@ -196,8 +201,8 @@ let tensorv (#n #m: pos) (u: matrix complex n 1) (v: matrix complex m 1)
     let i1, i2 = i / m, i % m in
     (ijth u i1 0) `cmult` (ijth v i2 0))
 
-let zero: qbit #1 = init (fun i _ -> if i = 0 then 1.0R, 0.0R else 0.0R, 0.0R)
-let one: qbit #1  = init (fun i _ -> if i = 1 then 1.0R, 0.0R else 0.0R, 0.0R)
+let zero: qbit 1 = init (fun i _ -> if i = 0 then 1.0R, 0.0R else 0.0R, 0.0R)
+let one: qbit 1  = init (fun i _ -> if i = 1 then 1.0R, 0.0R else 0.0R, 0.0R)
 
 let invsqrt2: real = 1.0R /. sqrt_2
 
@@ -205,17 +210,17 @@ let cinvsqrt2: complex = invsqrt2, 0.0R
 
 let csqrt2: complex = sqrt_2, 0.0R
 
-let plus: qbit = (cinvsqrt2 `mscalar` zero) `madd` (cinvsqrt2 `mscalar` one)
+let plus: qbit 1 = (cinvsqrt2 `mscalar` zero) `madd` (cinvsqrt2 `mscalar` one)
 
-let cconj (z: complex) : complex =
-  let a, b = z in
-    a, neg b
+let cconj (z: complex) : complex = let a, b = z in a, neg b
 
-let conjugate (#m #n:pos) (ma: matrix complex m n) : matrix complex m n =
-  init (fun i j -> cconj (ijth ma i j))
+let conjugate (#m #n:pos) (ma: matrix complex m n)
+  : r:(matrix complex m n){ forall i j. ijth r i j == cconj (ijth ma i j) }
+= init ((fun i j -> cconj (ijth ma i j)) <: matrix_generator complex m n)
 
-let transpose (#m #n:pos) (ma: matrix complex m n) : matrix complex n m =
-  init (fun i j -> ijth ma j i)
+let transpose (#m #n:pos) (ma: matrix complex m n)
+  : r:(matrix complex n m){ forall i j. ijth r j i == ijth ma i j }
+= init (fun i j -> ijth ma j i)
 
 let row_vector (#n:pos) (op: operator n) : matrix complex 1 (pow2 n) =
   init ((fun i _ -> ijth op 0 i) <: matrix_generator complex 1 (pow2 n))
@@ -223,54 +228,203 @@ let row_vector (#n:pos) (op: operator n) : matrix complex 1 (pow2 n) =
 let col_vector (#n:pos) (op: operator n) : matrix complex (pow2 n) 1 =
   init ((fun _ j -> ijth op j 0) <: matrix_generator complex (pow2 n) 1)
 
-let inner_product (#n:pos) (r: matrix complex 1 n) (c: matrix complex n 1) : complex =
-  let m11 = matrix_mul c_addition_is_comm_monoid c_multiplication_is_comm_monoid r c in
-  ijth m11 0 0
-
 let mprod (#n #m #p: pos) (ma: matrix complex n m) (mb: matrix complex m p) : matrix complex n p
   = matrix_mul c_addition_is_comm_monoid c_multiplication_is_comm_monoid ma mb
+
+let inner_product (#n:pos) (r: matrix complex 1 n) (c: matrix complex n 1) : complex =
+  ijth (mprod r c) 0 0
 
 let dagger (#n #m: pos) (ma: matrix complex n m) : matrix complex m n =
   transpose (conjugate ma)
 
-assume val sqrt (x: real) : r:real{ r *. r == x }
+assume val sqrt (x: real{x >=. 0.0R}) : r:real{ r >=. 0.0R /\ r *. r == x }
+
+let complex_times_conjugate_is_real_and_positive (z: complex)
+  : Lemma (ensures creal (z `cmult` (cconj z)) >=. 0.0R)
+=
+  let a, b = z in
+  calc (==) {
+    creal (z `cmult` (cconj z));
+    == { () }
+    a *. a -. b *. neg b;
+    == { neg_applies_once_right b b }
+    a *. a -. neg (b *. b);
+    == { () }
+    a *. a +. b *. b;
+  }
+
+let inner_product_with_dagger_is_real_and_positive (#n:pos) (m: matrix complex n 1)
+  : Lemma (ensures creal (inner_product (dagger m) m) >=. 0.0R)
+=
+  let dm = dagger m in
+  calc (==) {
+    inner_product dm m;
+
+    == { () }
+    ijth (mprod dm m) 0 0;
+
+    // == { matrix_mul_ijth_as_sum
+    //         c_addition_is_comm_monoid
+    //         c_multiplication_is_comm_monoid
+    //         (transpose (conjugate m)) m 0 0 }
+    == { admit() }
+    SP.foldm_snoc
+      c_addition_is_comm_monoid
+      (SB.init n (fun (j: under n) -> (ijth dm 0 j) `cmult` (ijth m j 0)));
+    // Siento que me falta poder hacer inducción sobre secuencias
+    // O quizás quiero mapear a una secuencia de P(x) donde P es el predicado que quiero probar
+    // y que el foldm_snoc de eso me de true?
+  };
+  admit()
 
 let norm (#n:pos) (v: matrix complex n 1) : real =
   let qdag = dagger v in
   let norm2 = inner_product qdag v in
+  inner_product_with_dagger_is_real_and_positive #n v;
   sqrt (creal norm2)
 
 let cabs (z: complex) : real =
   let a, b = z in
   sqrt (a *. a +. b *. b)
 
-let vnorm_distributes_over_scalars (#n: pos) (a: complex) (v: qbit #n)
-  : Lemma (norm (a `mscalar` v) == (cabs a) *. (norm v)) = admit()
+#set-options "--query_stats"
 
-let unitary_matrices_preserve_norm (#n: pos) (op: operator n)
+let transpose_scalar (#n: pos) (a: complex) (v: qbit n)
+  : Lemma ((transpose (a `mscalar` v)) `mequals` (a `mscalar` (transpose v)))
+
+= let proof (i: under 1) (j: under (pow2 n))
+    : Lemma (ijth (transpose (a `mscalar` v)) i j == ijth (a `mscalar` (transpose v)) i j) = () in
+
+  matrix_equiv_from_proof c_is_equiv (transpose (a `mscalar` v)) (a `mscalar` (transpose v)) proof
+
+let ijth_conjugate (#m #n: pos) (ma: matrix complex m n) (i: under m) (j: under n)
+  : Lemma (ijth (conjugate ma) i j == cconj (ijth ma i j)) = ()
+
+let ijth_scalar (#m #n: pos) (a: complex) (ma: matrix complex m n) (i: under m) (j: under n)
+  : Lemma (ijth (a `mscalar` ma) i j == a `cmult` (ijth ma i j)) = ()
+
+let cconj_cmult (z w: complex)
+  : Lemma (cconj (z `cmult` w) == cconj z `cmult` cconj w)
+= let a, b = z in
+  let c, d = w in
+  calc (==) {
+    cconj (z `cmult` w);
+    == { () }
+    cconj (
+      a *. c -. b *. d,
+      a *. d +. b *. c
+    );
+    == { () }
+    a *. c -. b *. d,
+    neg (a *. d +. b *. c);
+    == { () }
+    a *. c -. b *. d,
+    neg (a *. d) +. neg(b *. c);
+    == {
+      neg_applies_once_right a d;
+      neg_applies_once_left b c
+    }
+    a *. c -. b *. d,
+    a *. neg d +. neg b *. c;
+    == { () }
+    a *. c +. neg (b *. d),
+    a *. neg d +. neg b *. c;
+    == { neg_applies_once_left b d }
+    a *. c +. neg (neg (neg b *. d)),
+    a *. neg d +. neg b *. c;
+    == { neg_applies_once_right (neg b) d }
+    a *. c -. neg b *. neg d,
+    a *. neg d +. neg b *. c;
+    == { () }
+    (a, neg b) `cmult` (c, neg d);
+    == { () }
+    cconj z `cmult` cconj w;
+  }
+
+let conjugate_scalar (#n: pos) (a: complex) (v: qbit n)
+  : Lemma (conjugate (a `mscalar` v) `mequals` (cconj a `mscalar` conjugate v))
+= let proof (i: under (pow2 n)) (j: under 1)
+    : Lemma (ijth (conjugate (a `mscalar` v)) i j == ijth ((cconj a) `mscalar` (conjugate v)) i j)
+  = //calc (==) {
+    //  ijth (conjugate (a `mscalar` v)) i j;
+    //  == { ijth_conjugate (a `mscalar` v) i j }
+    //  cconj (ijth (a `mscalar` v) i j);
+    //  == { ijth_scalar a v i j }
+    //  cconj (a `cmult` (ijth v i j));
+    //  == { cconj_cmult a (ijth v i j) }
+    //  cconj a `cmult` cconj (ijth v i j);
+    //  == { ijth_conjugate v i j }
+    //  cconj a `cmult` ijth (conjugate v) i j;
+    //  == { ijth_scalar (cconj a) (conjugate v) i j }
+    //  ijth ((cconj a) `mscalar` (conjugate v)) i j; // Why does this have a different type ?!
+    //} in
+    admit() in
+
+  matrix_equiv_from_proof c_is_equiv (conjugate (a `mscalar` v)) (cconj a `mscalar` conjugate v) proof
+
+let provable_equality_implies_equivalence (#m #n: pos) (ma mb: matrix complex m n)
+  : Lemma (requires ma == mb) (ensures ma `mequals` mb)
+= let proof (i: under m) (j: under n)
+    : Lemma (ijth ma i j == ijth mb i j) = () in
+
+  matrix_equiv_from_proof c_is_equiv ma mb proof
+
+// `mequals` appears to not be trivially transitive,
+// so instead of filling that hole, I will proceed to cheat
+let equivalence_implies_provable_equality (#m #n: pos) (ma mb: matrix complex m n)
+  : Lemma (requires ma `mequals` mb) (ensures ma == mb) = admit()
+
+let dagger_scalar (#n: pos) (a: complex) (v: qbit n)
+  : Lemma ((dagger (a `mscalar` v)) == (cconj a `mscalar` dagger v))
+= calc (==) {
+    dagger (a `mscalar` v);
+    == { () }
+    transpose (conjugate (a `mscalar` v));
+    == {
+      conjugate_scalar a v;
+      equivalence_implies_provable_equality (conjugate (a `mscalar` v)) ((cconj a) `mscalar` conjugate v)
+    }
+    transpose ((cconj a) `mscalar` conjugate v);
+    == {
+      transpose_scalar (cconj a) (conjugate v);
+      equivalence_implies_provable_equality
+        (transpose ((cconj a) `mscalar` conjugate v))
+        (cconj a `mscalar` transpose (conjugate v))
+    }
+    (cconj a `mscalar` transpose (conjugate v));
+    == { () }
+    cconj a `mscalar` dagger v;
+  }
+
+// GM: parecen demostrables, la mayoría son sobre prod escalar
+let vnorm_distributes_over_scalars (#n: pos) (a: complex) (v: qbit n)
+  : Lemma (norm (a `mscalar` v) == (cabs a) *. (norm v))
+= admit() // a bit too hard for me, don't know how to work with inner_product and by consequence matrix_mul
+
+let is_isometry (#n: pos) (op: operator n)
   : prop = forall v. norm (op `mprod` v) == norm v
 
 let clona_todo_2 (u: operator 2) : prop =
-  forall (psi phi: qbit #1). u `mprod` (psi `tensorv` phi) == psi `tensorv` psi
+  forall (psi phi: qbit 1). u `mprod` (psi `tensorv` phi) == psi `tensorv` psi
 
-let tensor_distributes_over_sum (#n: pos) (v: qbit #n) (w: qbit #n) (x: qbit #n)
-  : Lemma (v `tensorv` (w `madd` x) == (v `tensorv` w) `madd` (v `tensorv` x)) = admit()
+let tensor_distributes_over_sum (#n: pos) (v: qbit n) (w: qbit n) (x: qbit n)
+  : Lemma ((v `tensorv` (w `madd` x)) == ((v `tensorv` w) `madd` (v `tensorv` x))) = admit()
 
-let tensor_distributes_over_scalar (#n: pos) (a: complex) (v: qbit #n) (c: qbit #n)
+let tensor_distributes_over_scalar (#n: pos) (a: complex) (v: qbit n) (c: qbit n)
   : Lemma (v `tensorv` (a `mscalar` c) == a `mscalar` (v `tensorv` c)) = admit()
 
-let product_is_linear_1 (#n: pos) (u: operator n) (v: qbit #n) (w: qbit #n)
+let product_is_linear_1 (#n: pos) (u: operator n) (v: qbit n) (w: qbit n)
   : Lemma (u `mprod` (v `madd` w) == (u `mprod` v) `madd` (u `mprod` w)) = admit()
 
-let product_is_linear_2 (#n: pos) (u: operator n) (a: complex) (v: qbit #n)
+let product_is_linear_2 (#n: pos) (u: operator n) (a: complex) (v: qbit n)
   : Lemma (u `mprod` (a `mscalar` v) == a `mscalar` (u `mprod` v)) = admit()
 
-let product_distributes_over_scalar_sum (#n: pos) (a b: complex) (v: qbit #n)
+let product_distributes_over_scalar_sum (#n: pos) (a b: complex) (v: qbit n)
   : Lemma ((a `mscalar` v) `madd` (b `mscalar` v) == (a `cadd` b) `mscalar` v) = admit()
 
 // This is also an axiom of the reals
 let existence_of_multiplicative_inverse (a: real)
-  : Lemma (requires a <> 0.0R) (ensures a *. (1.0R /. a) == 1.0R) = admit ()
+  : Lemma (requires a =!= 0.0R) (ensures a *. (1.0R /. a) == 1.0R) = admit ()
 
 let specific_addition ()
   : Lemma (cinvsqrt2 `cadd` cinvsqrt2 == csqrt2)
@@ -290,6 +444,11 @@ let specific_addition ()
     (sqrt_2, 0.0R);
   }
 
+let sq_sign_eq (a b : real)
+  : Lemma (requires a *. a == b *. b /\ a >=. 0.0R /\ b >=. 0.0R)
+          (ensures a == b)
+  = admit ()
+
 let specific_absolute_value ()
   : Lemma (cabs csqrt2 == sqrt_2)
 = calc (==) {
@@ -297,13 +456,13 @@ let specific_absolute_value ()
     == { () }
     sqrt (sqrt_2 *. sqrt_2);
     == { () }
-    sqrt (2.0R);
-    == { admit() } // don't know why this doesn't work
+    sqrt 2.0R;
+    == { sq_sign_eq sqrt_2 (sqrt 2.0R) }
     sqrt_2;
   }
 
 let no_cloning_theorem_contradiction (u: operator 2)
-  : Lemma (requires clona_todo_2 u /\ unitary_matrices_preserve_norm u)
+  : Lemma (requires clona_todo_2 u /\ is_isometry u)
           (ensures False)
 =
   assume (norm (zero `tensorv` plus) == 1.0R);
@@ -316,7 +475,7 @@ let no_cloning_theorem_contradiction (u: operator 2)
     == { () }
     norm (zero `tensorv` plus);
 
-    == { () <: squash (unitary_matrices_preserve_norm u) }
+    == { () <: squash (is_isometry u) }
     norm (u `mprod` (zero `tensorv` plus));
 
     == { () }
@@ -360,6 +519,6 @@ let no_cloning_theorem_contradiction (u: operator 2)
   }
 
 let no_cloning_theorem (#n:pos) (u: operator 2)
-  : Lemma (requires unitary_matrices_preserve_norm u)
+  : Lemma (requires is_isometry u)
           (ensures ~ (clona_todo_2 u))
 = Classical.move_requires no_cloning_theorem_contradiction u
