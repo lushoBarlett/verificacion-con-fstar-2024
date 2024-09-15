@@ -1,7 +1,7 @@
 module Trabajo.Final
 
 module SP = FStar.Seq.Permutation
-module SB = FStar.Seq.Base
+module SB = FStar.Seq
 
 open FStar.Mul
 open FStar.Real
@@ -236,10 +236,16 @@ let dagger (#n #m: pos) (ma: matrix complex n m) : matrix complex m n =
 
 assume val sqrt (x: real{x >=. 0.0R}) : r:real{ r >=. 0.0R /\ r *. r == x }
 
-let complex_times_conjugate_is_real_and_positive (z: complex)
-  : Lemma (ensures creal (z `cmult` (cconj z)) >=. 0.0R)
-=
+let cabs (z: complex) : real =
   let a, b = z in
+  sqrt (a *. a +. b *. b)
+
+let is_real_nonneg (c:complex) : prop =
+  creal c >=. 0.0R  /\ cimag c == 0.0R
+
+let complex_times_conjugate_is_abs_squared (z: complex)
+  : Lemma (creal (z `cmult` cconj z) == cabs z *. cabs z)
+= let a, b = z in
   calc (==) {
     creal (z `cmult` (cconj z));
     == { () }
@@ -248,42 +254,139 @@ let complex_times_conjugate_is_real_and_positive (z: complex)
     a *. a -. neg (b *. b);
     == { () }
     a *. a +. b *. b;
+    == { () }
+    cabs z *. cabs z;
   }
 
-// LB: No se cómo hacer inducción sobre secuencias, en general trabajar con inner_product me resultó muy difícil
+let __difference_of_squares (a b: real)
+  : Lemma (a *. a -. b *. b == (a +. b) *. (a -. b))
+= calc (==) {
+    a *. a +. a *. b -. b *. b -. a *. b;
+    == {
+      neg_applies_once_left b a;
+      neg_applies_once_right b b
+    }
+    a *. a +. a *. b +. neg b *. b +. neg b *. a;
+    == {
+      mul_dist_left a a b;
+      mul_dist_left (neg b) b a
+    }
+    a *. (a +. b) +. neg b *. (a +. b);
+    == {
+      mul_dist_right a (neg b) (a +. b)
+    }
+    (a -. b) *. (a +. b);
+  }
+
+let root_of_squared (x: real{x >=. 0.0R}) : Lemma (sqrt (x *. x) == x)
+= let r = sqrt (x *. x) in
+  assert (r *. r -. x *. x == 0.0R);
+  __difference_of_squares r x;
+  assert (r -. x == 0.0R)
+
+let complex_times_conjugate_is_real_nonneg (z: complex)
+  : Lemma (is_real_nonneg (z `cmult` cconj z))
+= complex_times_conjugate_is_abs_squared z;
+  let a, b = z in
+  calc (==) {
+    cimag (z `cmult` (cconj z));
+    == { () }
+    a *. neg b +. b *. a;
+    == { neg_applies_once_left b a }
+    neg (a *. b) +. b *. a;
+    == { () }
+    0.0R;
+  }
+
+let downgrade_left_to_reals (z w: complex)
+  : Lemma (requires is_real_nonneg z)
+          (ensures creal (z `cmult` w) == creal z *. creal w) = ()
+
+let downgrade_right_to_reals (z w: complex)
+  : Lemma (requires is_real_nonneg z)
+          (ensures creal (z `cmult` w) == creal z *. creal w) = ()
+
+let conj_vec (#n:pos) (v : SB.lseq complex n) : SB.lseq complex n =
+  SB.init n (fun i -> cconj (SB.index v i))
+
+let __seq_of_products_conj_self (#n: pos) (v: SB.lseq complex n) (i: under n)
+  : Lemma (is_real_nonneg (SB.index (seq_of_products c_multiplication_is_comm_monoid (conj_vec v) v) i))
+= let vi = SB.index v i in
+  calc (==) {
+    SB.index (seq_of_products c_multiplication_is_comm_monoid (conj_vec v) v) i;
+    == { () }
+    SB.index (conj_vec v) i `cmult` vi;
+    == { () }
+    cconj vi `cmult` vi;
+    == { assert (forall z w. z `cmult` w == w `cmult` z) } // why commutation so hard
+    vi `cmult` cconj vi;
+  };
+  complex_times_conjugate_is_real_nonneg vi
+
+let __foldm_stable (#a:Type) (pred : a -> prop) (s : SB.seq a)
+  (#eq : equiv a) (c : cm a eq)
+  : Lemma (requires pred c.unit /\ (forall x y. pred x /\ pred y ==> pred (c.mult x y)))
+          (ensures pred (SP.foldm_snoc c s))
+  = admit()
+
+let __foldm_add_nonneg (#n : pos) (s : SB.lseq complex n)
+  : Lemma (requires forall (i: under n). is_real_nonneg (SB.index s i))
+          (ensures is_real_nonneg (SP.foldm_snoc c_addition_is_comm_monoid s))
+  = __foldm_stable is_real_nonneg s c_addition_is_comm_monoid
+
+let __inner_conj_vec (#n: pos) (v: SB.lseq complex n)
+  : Lemma (ensures is_real_nonneg (dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (conj_vec v) v))
+  // so much gymnastics for this, assert forall didn't work
+  = let proof (i: under n)
+      : Lemma (is_real_nonneg (SB.index (conj_vec v) i `cmult` SB.index v i))
+      = __seq_of_products_conj_self v i in
+    Classical.forall_intro proof;
+    __foldm_add_nonneg #n (seq_of_products c_multiplication_is_comm_monoid (conj_vec v) v)
+
+let row_dagger_is_conj_col (#m #n:pos) (mm: matrix complex m n) (i: under n)
+  : Lemma (ensures row (dagger mm) i == conj_vec #m (col mm i))
+  = assert (row (dagger mm) i `Seq.equal` conj_vec #m (col mm i))
+
+let __inner_product_with_dagger_is_real_and_positive
+  (#m #n:pos)
+  (mm: matrix complex m n)
+  (i : nat{i < n})
+  : Lemma (ensures is_real_nonneg (ijth (mprod (dagger mm) mm) i i))
+= calc (==) {
+    ijth (mprod (dagger mm) mm) i i <: complex;
+    == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid (dagger mm) mm i i }
+    dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row (dagger mm) i) (col mm i);
+    == {}
+    SP.foldm_snoc c_addition_is_comm_monoid
+      (seq_of_products c_multiplication_is_comm_monoid
+        (row (dagger mm) i)
+        (col mm i));
+    == { row_dagger_is_conj_col mm i }
+    SP.foldm_snoc c_addition_is_comm_monoid
+      (seq_of_products c_multiplication_is_comm_monoid
+        (conj_vec #m (col mm i))
+        (col mm i));
+  };
+  Classical.forall_intro (__seq_of_products_conj_self #m (col mm i));
+  __foldm_add_nonneg #m (seq_of_products c_multiplication_is_comm_monoid (conj_vec #m (col mm i)) (col mm i))
+
 let inner_product_with_dagger_is_real_and_positive (#n:pos) (m: matrix complex n 1)
   : Lemma (ensures creal (inner_product (dagger m) m) >=. 0.0R)
 =
   let dm = dagger m in
-  calc (==) {
-    inner_product dm m;
-
+  calc (>=.) {
+    creal (inner_product dm m);
     == { () }
-    ijth (mprod dm m) 0 0;
+    creal (ijth (mprod dm m) 0 0);
+    >=. { __inner_product_with_dagger_is_real_and_positive m 0 }
+    0.0R;
+  }
 
-    // == { matrix_mul_ijth_as_sum
-    //         c_addition_is_comm_monoid
-    //         c_multiplication_is_comm_monoid
-    //         (transpose (conjugate m)) m 0 0 }
-    == { admit() }
-    SP.foldm_snoc
-      c_addition_is_comm_monoid
-      (SB.init n (fun (j: under n) -> (ijth dm 0 j) `cmult` (ijth m j 0)));
-    // Siento que me falta poder hacer inducción sobre secuencias
-    // O quizás quiero mapear a una secuencia de P(x) donde P es el predicado que quiero probar
-    // y que el foldm_snoc de eso me de true?
-  };
-  admit()
-
-let norm (#n:pos) (v: matrix complex n 1) : real =
+let norm (#n:pos) (v: matrix complex n 1): x:real{x >=. 0.0R} =
   let qdag = dagger v in
   let norm2 = inner_product qdag v in
   inner_product_with_dagger_is_real_and_positive #n v;
   sqrt (creal norm2)
-
-let cabs (z: complex) : real =
-  let a, b = z in
-  sqrt (a *. a +. b *. b)
 
 #set-options "--query_stats"
 
@@ -339,42 +442,53 @@ let cconj_cmult (z w: complex)
     cconj z `cmult` cconj w;
   }
 
-// LB: en esta prueba, y en muchas, el tipo de los términos me termina dando distinto del tipo
-// de expresión con la que yo empiezo. Mirando el tipado, parece que todo sale de secuencias
-// y me cuesta entender qué es lo que está pasando.
 let conjugate_scalar (#n: pos) (a: complex) (v: qbit n)
   : Lemma (conjugate (a `mscalar` v) `mequals` (cconj a `mscalar` conjugate v))
 = let proof (i: under (pow2 n)) (j: under 1)
     : Lemma (ijth (conjugate (a `mscalar` v)) i j == ijth ((cconj a) `mscalar` (conjugate v)) i j)
-  = //calc (==) {
-    //  ijth (conjugate (a `mscalar` v)) i j;
-    //  == { ijth_conjugate (a `mscalar` v) i j }
-    //  cconj (ijth (a `mscalar` v) i j);
-    //  == { ijth_scalar a v i j }
-    //  cconj (a `cmult` (ijth v i j));
-    //  == { cconj_cmult a (ijth v i j) }
-    //  cconj a `cmult` cconj (ijth v i j);
-    //  == { ijth_conjugate v i j }
-    //  cconj a `cmult` ijth (conjugate v) i j;
-    //  == { ijth_scalar (cconj a) (conjugate v) i j }
-    //  ijth ((cconj a) `mscalar` (conjugate v)) i j; // Why does this have a different type ?!
-    //} in
-    admit() in
-
+  = calc (==) {
+      ijth (conjugate (a `mscalar` v)) i j <: complex;
+      == { ijth_conjugate (a `mscalar` v) i j }
+      cconj (ijth (a `mscalar` v) i j) <: complex;
+      == { ijth_scalar a v i j }
+      cconj (a `cmult` (ijth v i j)) <: complex;
+      == { cconj_cmult a (ijth v i j) }
+      cconj a `cmult` cconj (ijth v i j) <: complex;
+      == { ijth_conjugate v i j }
+      cconj a `cmult` ijth (conjugate v) i j <: complex;
+      == { ijth_scalar (cconj a) (conjugate v) i j }
+      ijth ((cconj a) `mscalar` (conjugate v)) i j <: complex;
+    }
+  in
   matrix_equiv_from_proof c_is_equiv (conjugate (a `mscalar` v)) (cconj a `mscalar` conjugate v) proof
 
-let provable_equality_implies_equivalence (#m #n: pos) (ma mb: matrix complex m n)
-  : Lemma (requires ma == mb) (ensures ma `mequals` mb)
+let provable_equality_implies_equivalence (#m #n: pos) (ma : matrix complex m n)
+  : Lemma (ensures ma `mequals` ma) [SMTPat (ma `mequals` ma)]
 = let proof (i: under m) (j: under n)
-    : Lemma (ijth ma i j == ijth mb i j) = () in
+    : Lemma (ijth ma i j == ijth ma i j) = () in
+  matrix_equiv_from_proof c_is_equiv ma ma proof
 
-  matrix_equiv_from_proof c_is_equiv ma mb proof
+let provable_equality_implies_equivalence2 (#m #n: pos) (ma mb: matrix complex m n)
+  : Lemma (requires ma == mb) (ensures ma `mequals` mb)
+= ()
 
 // LB: el módulo de matrices cuenta con una relación de equivalencia
 // pero no encontré la forma de transformar eso en igualdad demostrable
 // así que me inventé este hack para usarlo igual.
+
+// GM: ok asumir
+let matrix_ext (#m #n: pos) (ma mb : matrix complex m n)
+  : Lemma (requires forall i j. ijth ma i j == ijth mb i j)
+          (ensures ma == mb)
+  = admit()
+
 let equivalence_implies_provable_equality (#m #n: pos) (ma mb: matrix complex m n)
-  : Lemma (requires ma `mequals` mb) (ensures ma == mb) = admit()
+  : Lemma (requires ma `mequals` mb) (ensures ma == mb)
+= let aux (i:under m) (j: under n) : Lemma (ijth ma i j == ijth mb i j) =
+    matrix_equiv_ijth c_is_equiv ma mb i j
+  in
+  Classical.forall_intro_2 aux;
+  matrix_ext ma mb
 
 let dagger_scalar (#n: pos) (a: complex) (v: qbit n)
   : Lemma ((dagger (a `mscalar` v)) == (cconj a `mscalar` dagger v))
@@ -398,11 +512,35 @@ let dagger_scalar (#n: pos) (a: complex) (v: qbit n)
     cconj a `mscalar` dagger v;
   }
 
-// LB: norm utiliza inner_product, que reitero, no sé cómo trabajarlo.
-// esta prueba admito que la intenté un poco y la borré porque vi que entraba en lo anterior
+// Because of technicalities in our inner_product definition, it is actually antilinear in the left argument
+// because the vector must be passed as conjugated, which means the scalar comes conjugated when it actually isn't.
+let inner_product_left_linearity (#n: pos) (a: complex) (u: matrix complex 1 n) (v: matrix complex n 1)
+  : Lemma (inner_product (cconj a `mscalar` u) v == a `cmult` inner_product u v) = admit()
+
+let inner_product_right_linearity (#n: pos) (a: complex) (u: matrix complex 1 n) (v: matrix complex n 1)
+  : Lemma (inner_product u (a `mscalar` v) == cconj a `cmult` inner_product u v) = admit()
+
 let vnorm_distributes_over_scalars (#n: pos) (a: complex) (v: qbit n)
   : Lemma (norm (a `mscalar` v) == (cabs a) *. (norm v))
-= admit()
+= //let test: x:real{x >=. 0.0R} = creal (inner_product (dagger (a `mscalar` v)) (a `mscalar` v)) in
+  admit();
+  calc (==) {
+    norm (a `mscalar` v) <: x:real{x >=. 0.0R};
+    == { () }
+    sqrt (creal (inner_product (dagger (a `mscalar` v)) (a `mscalar` v)) <: x:real{x >=. 0.0R});
+    == { dagger_scalar a v }
+    sqrt (creal (inner_product (cconj a `mscalar` dagger v) (a `mscalar` v))) <: x:real{x >=. 0.0R};
+    == {
+      inner_product_left_linearity (cconj a) (dagger v) (a `mscalar` v);
+      inner_product_right_linearity a (dagger v) v
+    }
+    sqrt (creal (a `cmult` (cconj a `cmult` (inner_product (dagger v) v)))) <: x:real{x >=. 0.0R};
+    == { cmult_associative a (cconj a) (inner_product (dagger v) v) }
+    sqrt (creal ((a `cmult` cconj a) `cmult` (inner_product (dagger v) v))) <: x:real{x >=. 0.0R};
+    == { complex_times_conjugate_is_real_nonneg a }
+    sqrt (creal ((a `cmult` cconj a) `cmult` (inner_product (dagger v) v))) <: x:real{x >=. 0.0R};
+  };
+  admit()
 
 let is_isometry (#n: pos) (op: operator n)
   : prop = forall v. norm (op `mprod` v) == norm v
@@ -455,65 +593,61 @@ let cmult_distributes_over_cadd_right (z w x: complex)
     (w `cmult` z) `cadd` (x `cmult` z);
   }
 
-// LB: acá vuelve el problema del tipado de las secuencias
-// entiendo que el bosquejo de la prueba está bien.
-// Lo de aritmética sé hacerlo, simplemente no lo escribí.
-// Por alguna razón estas pruebas me tardan mucho en correr hasta fallar.
+// for some reason fails with implicit arguments
+// sometimes it just takes longer to solve
+// seems trivial but Z3 is not happy with it
+let underdiv (n m: pos) (a: under (pow2 n * pow2 m)): under (pow2 n) = a / pow2 m
+
 let tensor_distributes_over_sum (#n #m: pos) (v: qbit n) (w: qbit m) (x: qbit m)
   : Lemma ((v `tensorv` (w `madd` x)) == ((v `tensorv` w) `madd` (v `tensorv` x)))
 = let proof (i: under (pow2 n * pow2 m)) (j: under 1)
     : Lemma (ijth (v `tensorv` (w `madd` x)) i j == ijth ((v `tensorv` w) `madd` (v `tensorv` x)) i j)
-  //= calc (==) {
-  //  ijth (v `tensorv` (w `madd` x)) i j;
-  //  == { ijth_tensorv v (w `madd` x) i j }
-  //  (ijth v (i / pow2 m) 0) `cmult` (ijth (w `madd` x) (i % pow2 m) 0);
-  //  == { ijth_madd w x (i % pow2 m) 0 }
-  //  (ijth v (i / pow2 m) 0) `cmult` (
-  //    ijth w (i % pow2 m) 0
-  //      `cadd`
-  //    ijth x (i % pow2 m) 0
-  //  );
-  //  == {
-  //    cmult_distributes_over_cadd_left
-  //      (ijth v (i / pow2 m) 0)
-  //      (ijth w (i % pow2 m) 0)
-  //      (ijth x (i % pow2 m) 0)
-  //  }
-  //  (ijth v (i / pow2 m) 0 `cmult` ijth w (i % pow2 m) 0) // Remember to prove i / pow2 m is under pow2 n!
-  //    `cadd`
-  //  (ijth v (i / pow2 m) 0 `cmult` ijth x (i % pow2 m) 0);
-  //  == {
-  //    ijth_tensorv v w i j;
-  //    ijth_tensorv v x i j
-  //  }
-  //  (ijth (v `tensorv` w) i j) `cadd` (ijth (v `tensorv` x) i j);
-  //  == { ijth_madd (v `tensorv` w) (v `tensorv` x) i j }
-  //  ijth ((v `tensorv` w) `madd` (v `tensorv` x)) i j; // Also does not type!!!
-  //} in
-  = admit() in
+  = let i_n: under (pow2 n) = underdiv n m i in
+    let i_m: under (pow2 m) = assert(i % pow2 m < pow2 m); i % pow2 m in
+    calc (==) {
+      ijth (v `tensorv` (w `madd` x)) i j <: complex;
+      == { ijth_tensorv v (w `madd` x) i j }
+      (ijth v i_n 0) `cmult` (ijth (w `madd` x) i_m 0) <: complex;
+      == { ijth_madd w x i_m 0 }
+      (ijth v i_n 0) `cmult` (ijth w i_m 0 `cadd` ijth x i_m 0) <: complex;
+      == { cmult_distributes_over_cadd_left (ijth v i_n 0) (ijth w i_m 0) (ijth x i_m 0) }
+      (ijth v i_n 0 `cmult` ijth w i_m 0) `cadd` (ijth v i_n 0 `cmult` ijth x i_m 0) <: complex;
+      == {
+        ijth_tensorv v w i j;
+        ijth_tensorv v x i j
+      }
+      (ijth (v `tensorv` w) i j) `cadd` (ijth (v `tensorv` x) i j) <: complex;
+      == { ijth_madd (v `tensorv` w) (v `tensorv` x) i j }
+      ijth ((v `tensorv` w) `madd` (v `tensorv` x)) i j <: complex;
+    } in
 
   matrix_equiv_from_proof c_is_equiv (v `tensorv` (w `madd` x)) ((v `tensorv` w) `madd` (v `tensorv` x)) proof;
   equivalence_implies_provable_equality (v `tensorv` (w `madd` x)) ((v `tensorv` w) `madd` (v `tensorv` x))
 
-// LB: ídem arriba
+// takes long, and retries, but it gets there. Don't know why
 let tensor_distributes_over_scalar (#n: pos) (a: complex) (v: qbit n) (c: qbit n)
   : Lemma (v `tensorv` (a `mscalar` c) == a `mscalar` (v `tensorv` c))
 = let proof (i: under (pow2 n * pow2 n)) (j: under 1)
     : Lemma (ijth (v `tensorv` (a `mscalar` c)) i j == ijth (a `mscalar` (v `tensorv` c)) i j)
-  //= calc (==) {
-  //  ijth (v `tensorv` (a `mscalar` c)) i j;
-  //  == { ijth_tensorv v (a `mscalar` c) i j }
-  //  (ijth v (i / (pow2 n)) 0) `cmult` (ijth (a `mscalar` c) (i % (pow2 n)) 0);
-  //  == { ijth_scalar a c (i % (pow2 n)) 0 }
-  //  (ijth v (i / (pow2 n)) 0) `cmult` (a `cmult` (ijth c (i % (pow2 n)) 0));
-  //  == { () }
-  //  a `cmult` ((ijth v (i / (pow2 n)) 0) `cmult` (ijth c (i % (pow2 n)) 0)); // same problem with arithmetic
-  //  == { () }
-  //  a `cmult` (ijth (v `tensorv` c) i j);
-  //  == { () }
-  //  ijth (a `mscalar` (v `tensorv` c)) i j; // Also does not type...
-  //} in
-  = admit() in
+  = let i_n: under (pow2 n) = underdiv n n i in
+    let i_m: under (pow2 n) = i % pow2 n in
+    calc (==) {
+      ijth (v `tensorv` (a `mscalar` c)) i j <: complex;
+      == { ijth_tensorv v (a `mscalar` c) i j }
+      (ijth v i_n 0) `cmult` (ijth (a `mscalar` c) i_m 0) <: complex;
+      == { ijth_scalar a c i_m 0 }
+      (ijth v i_n 0) `cmult` (a `cmult` (ijth c i_m 0)) <: complex;
+      == { () }
+      (a `cmult` (ijth c i_m 0)) `cmult` (ijth v i_n 0) <: complex;
+      == { cmult_associative a (ijth c i_m 0) (ijth v i_n 0) }
+      a `cmult` ((ijth c i_m 0) `cmult` (ijth v i_n 0)) <: complex;
+      == { () }
+      a `cmult` ((ijth v i_n 0) `cmult` (ijth c i_m 0)) <: complex;
+      == { () }
+      a `cmult` (ijth (v `tensorv` c) i j) <: complex;
+      == { ijth_scalar a (v `tensorv` c) i j }
+      ijth (a `mscalar` (v `tensorv` c)) i j <: complex;
+    } in
 
   matrix_equiv_from_proof c_is_equiv (v `tensorv` (a `mscalar` c)) (a `mscalar` (v `tensorv` c)) proof;
   equivalence_implies_provable_equality (v `tensorv` (a `mscalar` c)) (a `mscalar` (v `tensorv` c))
@@ -554,23 +688,21 @@ let product_is_linear_2 (#n: pos) (u: operator n) (a: complex) (v: qbit n)
   matrix_equiv_from_proof c_is_equiv (u `mprod` (a `mscalar` v)) (a `mscalar` (u `mprod` v)) proof;
   equivalence_implies_provable_equality (u `mprod` (a `mscalar` v)) (a `mscalar` (u `mprod` v))
 
-// LB: esta sí me sorprende que no tipa, quizás escribí algo mal y no me estoy dando cuenta?
 let product_distributes_over_scalar_sum (#n: pos) (a b: complex) (v: qbit n)
   : Lemma ((a `mscalar` v) `madd` (b `mscalar` v) == (a `cadd` b) `mscalar` v)
 = let proof (i: under (pow2 n)) (j: under 1)
     : Lemma (ijth ((a `mscalar` v) `madd` (b `mscalar` v)) i j == ijth ((a `cadd` b) `mscalar` v) i j)
-  //= calc (==) {
-  //  ijth ((a `mscalar` v) `madd` (b `mscalar` v)) i j;
-  //  == { ijth_madd (a `mscalar` v) (b `mscalar` v) i j }
-  //  ijth (a `mscalar` v) i j `cadd` ijth (b `mscalar` v) i j;
-  //  == { () }
-  //  (a `cmult` ijth v i j) `cadd` (b `cmult` ijth v i j);
-  //  == { cmult_distributes_over_cadd_right a b (ijth v i j) }
-  //  (a `cadd` b) `cmult` ijth v i j;
-  //  == { () }
-  //  ijth ((a `cadd` b) `mscalar` v) i j; // also doesn't type.
-  //} in
-  = admit() in
+  = calc (==) {
+      ijth ((a `mscalar` v) `madd` (b `mscalar` v)) i j <: complex;
+      == { ijth_madd (a `mscalar` v) (b `mscalar` v) i j }
+      ijth (a `mscalar` v) i j `cadd` ijth (b `mscalar` v) i j <: complex;
+      == { () }
+      (a `cmult` ijth v i j) `cadd` (b `cmult` ijth v i j) <: complex;
+      == { cmult_distributes_over_cadd_right (ijth v i j) a b }
+      (a `cadd` b) `cmult` ijth v i j <: complex;
+      == { () }
+      ijth ((a `cadd` b) `mscalar` v) i j <: complex;
+    } in
 
   matrix_equiv_from_proof c_is_equiv ((a `mscalar` v) `madd` (b `mscalar` v)) ((a `cadd` b) `mscalar` v) proof;
   equivalence_implies_provable_equality ((a `mscalar` v) `madd` (b `mscalar` v)) ((a `cadd` b) `mscalar` v)
