@@ -18,6 +18,11 @@ let mul_dist_left (x:real) (y:real) (z:real)
 let mult_associates (a b c: real)
   : Lemma (a *. (b *. c) == (a *. b) *. c) = admit()
 
+assume val sqrt (x: real{x >=. 0.0R}) : r:real{ r >=. 0.0R /\ r *. r == x }
+
+// override the usual definition with only the positive square root
+let sqrt_2 = sqrt 2.0R
+
 type complex: Type = real & real
 
 let creal (z: complex) : real =
@@ -234,9 +239,7 @@ let inner_product (#n:pos) (r: matrix complex 1 n) (c: matrix complex n 1) : com
 let dagger (#n #m: pos) (ma: matrix complex n m) : matrix complex m n =
   transpose (conjugate ma)
 
-assume val sqrt (x: real{x >=. 0.0R}) : r:real{ r >=. 0.0R /\ r *. r == x }
-
-let cabs (z: complex) : real =
+let cabs (z: complex): r:real{ r >=. 0.0R } =
   let a, b = z in
   sqrt (a *. a +. b *. b)
 
@@ -278,11 +281,29 @@ let __difference_of_squares (a b: real)
     (a -. b) *. (a +. b);
   }
 
+let product_of_nonneg_is_nonneg (a: real{a >=. 0.0R}) (b: real{b >=. 0.0R})
+  : Lemma (a *. b >=. 0.0R)
+= ()
+
 let root_of_squared (x: real{x >=. 0.0R}) : Lemma (sqrt (x *. x) == x)
 = let r = sqrt (x *. x) in
   assert (r *. r -. x *. x == 0.0R);
   __difference_of_squares r x;
   assert (r -. x == 0.0R)
+
+let reduce_square (a: real {a >=. 0.0R}) (b: real {b >=. 0.0R})
+  : Lemma (requires a *. a == b *. b) (ensures a == b)
+= let ra = sqrt (a *. a) in
+  let rb = sqrt (b *. b) in
+  root_of_squared a;
+  root_of_squared b
+
+let sqrt_distributes_over_mult(a: real{a >=. 0.0R}) (b: real{b >=. 0.0R})
+  : Lemma (sqrt (a *. b) == sqrt a *. sqrt b)
+= let sa_sb = sqrt a *. sqrt b in
+  let sab = sqrt (a *. b) in
+  assert (sa_sb *. sa_sb -. sab *. sab == 0.0R);
+  reduce_square sab (sa_sb)
 
 let complex_times_conjugate_is_real_nonneg (z: complex)
   : Lemma (is_real_nonneg (z `cmult` cconj z))
@@ -381,6 +402,10 @@ let inner_product_with_dagger_is_real_and_positive (#n:pos) (m: matrix complex n
     >=. { __inner_product_with_dagger_is_real_and_positive m 0 }
     0.0R;
   }
+
+let inner_product_with_dagger_is_real_and_positive_equiv (#n:pos) (a: complex) (m: matrix complex n 1)
+  : Lemma (requires a == (inner_product (dagger m) m)) (ensures creal a >=. 0.0R)
+= inner_product_with_dagger_is_real_and_positive m
 
 let norm (#n:pos) (v: matrix complex n 1): x:real{x >=. 0.0R} =
   let qdag = dagger v in
@@ -512,35 +537,83 @@ let dagger_scalar (#n: pos) (a: complex) (v: qbit n)
     cconj a `mscalar` dagger v;
   }
 
-// Because of technicalities in our inner_product definition, it is actually antilinear in the left argument
-// because the vector must be passed as conjugated, which means the scalar comes conjugated when it actually isn't.
+// Because of technicalities in our inner_product definition, it is actually linear in both arguments
+// because the dagger is applied outside the inner product, so inner_product is just matrix multiplication
+
+let mprod_scalar_left (#n #m #p: pos) (a: complex) (ma: matrix complex n m) (mb: matrix complex m p)
+  : Lemma (mprod (a `mscalar` ma) mb == a `mscalar` mprod ma mb)
+= admit()
+
+let mprod_scalar_right (#n #m #p: pos) (a: complex) (ma: matrix complex n m) (mb: matrix complex m p)
+  : Lemma (mprod ma (a `mscalar` mb) == a `mscalar` mprod ma mb)
+= let proof (i: under n) (j: under p)
+    : Lemma (ijth (mprod ma (a `mscalar` mb)) i j == ijth (a `mscalar` mprod ma mb) i j) = admit() in
+  matrix_equiv_from_proof c_is_equiv (mprod ma (a `mscalar` mb)) (a `mscalar` mprod ma mb) proof;
+  equivalence_implies_provable_equality (mprod ma (a `mscalar` mb)) (a `mscalar` mprod ma mb)
+
 let inner_product_left_linearity (#n: pos) (a: complex) (u: matrix complex 1 n) (v: matrix complex n 1)
-  : Lemma (inner_product (cconj a `mscalar` u) v == a `cmult` inner_product u v) = admit()
+  : Lemma (inner_product (a `mscalar` u) v == a `cmult` inner_product u v)
+= calc (==) {
+    inner_product (a `mscalar` u) v;
+    == { () }
+    ijth (mprod (a `mscalar` u) v) 0 0;
+    == { mprod_scalar_left a u v }
+    ijth (a `mscalar` mprod u v) 0 0;
+    == { ijth_scalar (a) (mprod u v) 0 0 }
+    a `cmult` ijth (mprod u v) 0 0;
+    == { () }
+    a `cmult` inner_product u v;
+  }
 
 let inner_product_right_linearity (#n: pos) (a: complex) (u: matrix complex 1 n) (v: matrix complex n 1)
-  : Lemma (inner_product u (a `mscalar` v) == cconj a `cmult` inner_product u v) = admit()
+  : Lemma (inner_product u (a `mscalar` v) == a `cmult` inner_product u v)
+= calc (==) {
+    inner_product u (a `mscalar` v);
+    == { () }
+    ijth (mprod u (a `mscalar` v)) 0 0;
+    == { mprod_scalar_right a u v }
+    ijth (a `mscalar` mprod u v) 0 0;
+    == { ijth_scalar (a) (mprod u v) 0 0 }
+    a `cmult` ijth (mprod u v) 0 0;
+    == { () }
+    a `cmult` inner_product u v;
+  }
 
 let vnorm_distributes_over_scalars (#n: pos) (a: complex) (v: qbit n)
   : Lemma (norm (a `mscalar` v) == (cabs a) *. (norm v))
-= //let test: x:real{x >=. 0.0R} = creal (inner_product (dagger (a `mscalar` v)) (a `mscalar` v)) in
-  admit();
-  calc (==) {
-    norm (a `mscalar` v) <: x:real{x >=. 0.0R};
-    == { () }
-    sqrt (creal (inner_product (dagger (a `mscalar` v)) (a `mscalar` v)) <: x:real{x >=. 0.0R});
+= calc (==) {
+    inner_product (dagger (a `mscalar` v)) (a `mscalar` v);
     == { dagger_scalar a v }
-    sqrt (creal (inner_product (cconj a `mscalar` dagger v) (a `mscalar` v))) <: x:real{x >=. 0.0R};
+    inner_product (cconj a `mscalar` dagger v) (a `mscalar` v);
     == {
-      inner_product_left_linearity (cconj a) (dagger v) (a `mscalar` v);
-      inner_product_right_linearity a (dagger v) v
+      inner_product_right_linearity a (cconj a `mscalar` dagger v) v;
+      inner_product_left_linearity (cconj a) (dagger v) v
     }
-    sqrt (creal (a `cmult` (cconj a `cmult` (inner_product (dagger v) v)))) <: x:real{x >=. 0.0R};
+    a `cmult` (cconj a `cmult` (inner_product (dagger v) v));
     == { cmult_associative a (cconj a) (inner_product (dagger v) v) }
-    sqrt (creal ((a `cmult` cconj a) `cmult` (inner_product (dagger v) v))) <: x:real{x >=. 0.0R};
-    == { complex_times_conjugate_is_real_nonneg a }
-    sqrt (creal ((a `cmult` cconj a) `cmult` (inner_product (dagger v) v))) <: x:real{x >=. 0.0R};
+    (a `cmult` cconj a) `cmult` (inner_product (dagger v) v);
   };
-  admit()
+  // need to put this here for the calc to accept the type refinements match
+  inner_product_with_dagger_is_real_and_positive (a `mscalar` v);
+  inner_product_with_dagger_is_real_and_positive v;
+  Classical.forall_intro_2 product_of_nonneg_is_nonneg;
+  calc (==) {
+    norm (a `mscalar` v);
+    == { () }
+    sqrt (creal (inner_product (dagger (a `mscalar` v)) (a `mscalar` v)));
+    == { () }
+    sqrt (creal ((a `cmult` cconj a) `cmult` (inner_product (dagger v) v)));
+    == {
+      complex_times_conjugate_is_real_nonneg a;
+      downgrade_left_to_reals (a `cmult` cconj a) (inner_product (dagger v) v);
+      complex_times_conjugate_is_abs_squared a
+    }
+    sqrt ((cabs a *. cabs a) *. creal (inner_product (dagger v) v));
+    == { sqrt_distributes_over_mult ((cabs a) *. cabs a) (creal (inner_product (dagger v) v)) }
+    sqrt (cabs a *. cabs a) *. sqrt (creal (inner_product (dagger v) v));
+    == { root_of_squared (cabs a) }
+    cabs a *. norm v;
+  }
 
 let is_isometry (#n: pos) (op: operator n)
   : prop = forall v. norm (op `mprod` v) == norm v
@@ -594,7 +667,7 @@ let cmult_distributes_over_cadd_right (z w x: complex)
   }
 
 // for some reason fails with implicit arguments
-// sometimes it just takes longer to solve
+// sometimes it just takes longer to solve, and sometimes it just fails?
 // seems trivial but Z3 is not happy with it
 let underdiv (n m: pos) (a: under (pow2 n * pow2 m)): under (pow2 n) = a / pow2 m
 
@@ -652,38 +725,101 @@ let tensor_distributes_over_scalar (#n: pos) (a: complex) (v: qbit n) (c: qbit n
   matrix_equiv_from_proof c_is_equiv (v `tensorv` (a `mscalar` c)) (a `mscalar` (v `tensorv` c)) proof;
   equivalence_implies_provable_equality (v `tensorv` (a `mscalar` c)) (a `mscalar` (v `tensorv` c))
 
-// LB: traté de usar algo del módulo de matrices que no había usado antes, como para dejar una linea
-// hecha, de por dónde creo que está la solución, pero no me tipa.
-let product_is_linear_1 (#n: pos) (u: operator n) (v: qbit n) (w: qbit n)
+// the closed propositions of left and right distributivity are needed
+// as well as absortion (but I didn't need to prove it apparently)
+// for the matrix multiplication lemma to work (a refinement of the mult monoid is used)
+let product_is_linear_1 (#n #m #p: pos) (u: matrix complex n m) (v: matrix complex m p) (w: matrix complex m p)
   : Lemma (u `mprod` (v `madd` w) == (u `mprod` v) `madd` (u `mprod` w))
-= let proof (i: under (pow2 n)) (j: under 1)
-    : Lemma (ijth (u `mprod` (v `madd` w)) i j == ijth ((u `mprod` v) `madd` (u `mprod` w)) i j)
-  //= calc (==) {
-  //  ijth (u `mprod` (v `madd` w)) i j;
-  //  == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid u (v `madd` w) i j }
-  //  // doesn't even work? why?
-  //  dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row u i) (col (v `madd` w) j);
-  //  == { admit() }
-  //  (magic());
-  //} in
-  = admit() in
+= Classical.forall_intro_3 cmult_distributes_over_cadd_left;
+  Classical.forall_intro_3 cmult_distributes_over_cadd_right;
 
-  matrix_equiv_from_proof c_is_equiv (u `mprod` (v `madd` w)) ((u `mprod` v) `madd` (u `mprod` w)) proof;
+  matrix_mul_is_left_distributive c_addition_is_comm_monoid c_multiplication_is_comm_monoid u v w;
+
   equivalence_implies_provable_equality (u `mprod` (v `madd` w)) ((u `mprod` v) `madd` (u `mprod` w))
 
-// LB: ídem arriba.
-let product_is_linear_2 (#n: pos) (u: operator n) (a: complex) (v: qbit n)
+let foldsnocs_of_equal_seqs_are_equal (#a:Type) (s1 s2 : SB.seq a)
+  (#eq : equiv a) (c : cm a eq)
+  : Lemma (requires SB.equal s1 s2) (ensures (SP.foldm_snoc c s1) == (SP.foldm_snoc c s2))
+  = ()
+
+let __seq_of_products_factors_scalar
+  (#n #m #p: pos)
+  (u: matrix complex n m) (a: complex) (v: matrix complex m p)
+  (i: under n) (j: under p)
+  : Lemma (
+    seq_of_products c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j) `Seq.equal`
+    (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
+  )
+  = assert (
+      seq_of_products c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k)))
+    );
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k))) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k))))
+    );
+    Classical.forall_intro_3 cmult_associative;
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k)))) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
+    )
+
+let __foldm_snoc_factors_scalar (s: SB.seq complex) (a: complex)
+  : Lemma (
+    SP.foldm_snoc c_addition_is_comm_monoid (SB.init (SB.length s) (fun i -> a `cmult` SB.index s i)) ==
+    a `cmult` SP.foldm_snoc c_addition_is_comm_monoid s
+  ) = admit() // TODO: last proof!
+
+let product_is_linear_2 (#n #m #p: pos) (u: matrix complex n m) (a: complex) (v: matrix complex m p)
   : Lemma (u `mprod` (a `mscalar` v) == a `mscalar` (u `mprod` v))
-= let proof (i: under (pow2 n)) (j: under 1)
+= let proof (i: under n) (j: under p)
     : Lemma (ijth (u `mprod` (a `mscalar` v)) i j == ijth (a `mscalar` (u `mprod` v)) i j)
-  //= calc (==) {
-  //  ijth (u `mprod` (a `mscalar` v)) i j;
-  //  == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid u (a `mscalar` v) i j }
-  //  dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j);
-  //  == { () }
-  //  (magic());
-  //} in
-  = admit() in
+  = let s  = SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))) in
+    let s' = SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)) in
+    calc (==) {
+    ijth (u `mprod` (a `mscalar` v)) i j <: complex;
+    == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid u (a `mscalar` v) i j }
+
+    dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j);
+    == {}
+
+    SP.foldm_snoc c_addition_is_comm_monoid
+      (seq_of_products c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j));
+
+    == { __seq_of_products_factors_scalar u a v i j }
+    SP.foldm_snoc c_addition_is_comm_monoid
+      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))));
+
+    == {
+      admit() // I don't know why this is not working
+      // __foldm_snoc_factors_scalar
+      // (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)))
+      // a;
+      // assert (
+      //   s' `Seq.equal`
+      //   (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)))
+      // )
+    }
+    a `cmult` SP.foldm_snoc c_addition_is_comm_monoid
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)));
+
+    == { assert (
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k))) `Seq.equal`
+      (seq_of_products c_multiplication_is_comm_monoid (row u i) (col v j))
+    )}
+
+    a `cmult` SP.foldm_snoc c_addition_is_comm_monoid
+      (seq_of_products c_multiplication_is_comm_monoid (row u i) (col v j));
+    == {}
+
+    a `cmult` dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row u i) (col v j);
+    == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid u v i j }
+
+    a `cmult` ijth (u `mprod` v) i j <: complex;
+    == { ijth_scalar a (u `mprod` v) i j }
+
+    ijth (a `mscalar` (u `mprod` v)) i j <: complex;
+  } in
 
   matrix_equiv_from_proof c_is_equiv (u `mprod` (a `mscalar` v)) (a `mscalar` (u `mprod` v)) proof;
   equivalence_implies_provable_equality (u `mprod` (a `mscalar` v)) (a `mscalar` (u `mprod` v))
@@ -727,27 +863,6 @@ let specific_addition ()
     (sqrt_2 *. 1.0R, 0.0R);
     == { () }
     (sqrt_2, 0.0R);
-  }
-
-let sq_sign_eq (a b : real)
-  : Lemma (requires a *. a == b *. b /\ a >=. 0.0R /\ b >=. 0.0R)
-          (ensures a == b)
-  = admit ()
-
-// LB: en algún momento me dejó de andar sq_sign_eq, y no sé por qué.
-// Tuve que instalar F* localmente en vez de usar el container porque se me rompió
-// y no tenía ganas de arreglarlo, puede ser por algo de eso, igual instalé
-// la versión que nos pediste.
-let specific_absolute_value ()
-  : Lemma (cabs csqrt2 == sqrt_2)
-= calc (==) {
-    cabs csqrt2;
-    == { () }
-    sqrt (sqrt_2 *. sqrt_2);
-    == { () }
-    sqrt 2.0R;
-    == { admit(); sq_sign_eq sqrt_2 (sqrt 2.0R) } // now this fails?
-    sqrt_2;
   }
 
 let no_cloning_theorem_contradiction (u: operator 2)
@@ -803,7 +918,7 @@ let no_cloning_theorem_contradiction (u: operator 2)
     == { () }
     (cabs csqrt2) *. 1.0R;
 
-    == { specific_absolute_value () }
+    == { () }
     sqrt_2;
   }
 
