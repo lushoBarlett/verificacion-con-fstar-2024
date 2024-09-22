@@ -190,6 +190,48 @@ let cmult_associative (z w x: complex)
 let c_multiplication_is_comm_monoid: cm complex c_is_equiv
   = CM cone cmult (fun _ -> ()) cmult_associative (fun _ _ -> ()) (fun _ _ _ _ -> ())
 
+let cmult_distributes_over_cadd_left (z w x: complex)
+  : Lemma (z `cmult` (w `cadd` x) == (z `cmult` w) `cadd` (z `cmult` x))
+= let za, zb = z in
+  let wa, wb = w in
+  let xa, xb = x in
+  calc (==) {
+    z `cmult` (w `cadd` x);
+    == { neg_applies_once_left zb (wb +. xb) }
+    za *. (wa +. xa) +. (neg zb) *. (wb +. xb),
+    za *. (wb +. xb) +. zb *. (wa +. xa);
+    == {
+      mul_dist_left za wa xa;
+      mul_dist_left (neg zb) wb xb;
+      mul_dist_left za wb xb;
+      mul_dist_left zb wa xa
+    }
+    za *. wa +. za *. xa +. (neg zb) *. wb +. (neg zb) *. xb,
+    za *. wb +. za *. xb +. zb *. wa +. zb *. xa;
+    == { neg_applies_once_left zb wb; neg_applies_once_left zb xb }
+    za *. wa -. zb *. wb +. za *. xa -. zb *. xb,
+    za *. wb +. zb *. wa +. za *. xb +. zb *. xa;
+    == {
+      mul_dist_left za wa xa;
+      mul_dist_left (neg zb) wb xb;
+      mul_dist_left za wb xb;
+      mul_dist_left zb wa xa
+    }
+    (z `cmult` w) `cadd` (z `cmult` x);
+  }
+
+let cmult_distributes_over_cadd_right (z w x: complex)
+  : Lemma ((w `cadd` x) `cmult` z == (w `cmult` z) `cadd` (x `cmult` z))
+= calc (==) {
+    (w `cadd` x) `cmult` z;
+    == { () }
+    z `cmult` (w `cadd` x);
+    == { cmult_distributes_over_cadd_left z w x }
+    (z `cmult` w) `cadd` (z `cmult` x);
+    == { () }
+    (w `cmult` z) `cadd` (x `cmult` z);
+  }
+
 let mequals (#m #n: pos) (ma mb: matrix complex m n) = (matrix_equiv c_is_equiv m n).eq ma mb
 
 let madd (#m #n: pos) (ma mb: matrix complex m n) = ma `matrix_add #_ #_ #m #n c_addition_is_comm_monoid` mb
@@ -403,17 +445,11 @@ let inner_product_with_dagger_is_real_and_positive (#n:pos) (m: matrix complex n
     0.0R;
   }
 
-let inner_product_with_dagger_is_real_and_positive_equiv (#n:pos) (a: complex) (m: matrix complex n 1)
-  : Lemma (requires a == (inner_product (dagger m) m)) (ensures creal a >=. 0.0R)
-= inner_product_with_dagger_is_real_and_positive m
-
 let norm (#n:pos) (v: matrix complex n 1): x:real{x >=. 0.0R} =
   let qdag = dagger v in
   let norm2 = inner_product qdag v in
   inner_product_with_dagger_is_real_and_positive #n v;
   sqrt (creal norm2)
-
-#set-options "--query_stats"
 
 let transpose_scalar (#n: pos) (a: complex) (v: qbit n)
   : Lemma ((transpose (a `mscalar` v)) `mequals` (a `mscalar` (transpose v)))
@@ -493,7 +529,7 @@ let provable_equality_implies_equivalence (#m #n: pos) (ma : matrix complex m n)
     : Lemma (ijth ma i j == ijth ma i j) = () in
   matrix_equiv_from_proof c_is_equiv ma ma proof
 
-let provable_equality_implies_equivalence2 (#m #n: pos) (ma mb: matrix complex m n)
+let provable_equality_implies_equivalence_test (#m #n: pos) (ma mb: matrix complex m n)
   : Lemma (requires ma == mb) (ensures ma `mequals` mb)
 = ()
 
@@ -537,27 +573,220 @@ let dagger_scalar (#n: pos) (a: complex) (v: qbit n)
     cconj a `mscalar` dagger v;
   }
 
+// the closed propositions of left and right distributivity are needed
+// as well as absortion (but I didn't need to prove it apparently)
+// for the matrix multiplication lemma to work (a refinement of the mult monoid is used)
+let product_is_linear_addition (#n #m #p: pos) (u: matrix complex n m) (v: matrix complex m p) (w: matrix complex m p)
+  : Lemma (u `mprod` (v `madd` w) == (u `mprod` v) `madd` (u `mprod` w))
+= Classical.forall_intro_3 cmult_distributes_over_cadd_left;
+  Classical.forall_intro_3 cmult_distributes_over_cadd_right;
+
+  matrix_mul_is_left_distributive c_addition_is_comm_monoid c_multiplication_is_comm_monoid u v w;
+
+  equivalence_implies_provable_equality (u `mprod` (v `madd` w)) ((u `mprod` v) `madd` (u `mprod` w))
+
+let seqmult = seq_of_products c_multiplication_is_comm_monoid
+
+let foldadd = SP.foldm_snoc c_addition_is_comm_monoid
+
+let slast (#t: Type) (s: SB.seq t{ SB.length s <> 0 }) : r:t{ r == SB.index s (SB.length s - 1) }
+  = let _, last = SB.un_snoc s in last
+
+let sinit (#t: Type) (s: SB.seq t{ SB.length s <> 0 }) : r:SB.seq t{ SB.length r == SB.length s - 1 }
+  = let init, _ = SB.un_snoc s in init
+
+// Don't know why this is so hard to prove
+let foldadd_sep (s: SB.seq complex{ SB.length s <> 0 })
+  : Lemma (foldadd s == (slast s) `cadd` foldadd (SB.init (SB.length (sinit s)) (fun k -> SB.index (sinit s) k)))
+= let s', lasts = SB.un_snoc s in
+  calc (==) {
+    foldadd s;
+    == { assert (s `Seq.equal` (SB.init (SB.length s) (fun k -> SB.index s k))) }
+    foldadd (SB.init (SB.length s) (fun k -> SB.index s k));
+    == {}
+    SB.foldr_snoc cadd (SB.init (SB.length s) (fun k -> SB.index s k)) czero;
+    == { assert (s' `Seq.equal` (SB.init (SB.length s') (fun k -> SB.index s' k))) }
+    lasts `cadd` (SB.foldr_snoc cadd (SB.init (SB.length s') (fun k -> SB.index s' k)) czero);
+    == { assert (
+     (SB.init (SB.length s') (fun k -> SB.index s' k)) `Seq.equal`
+     (SB.init (SB.length (sinit s)) (fun k -> SB.index (sinit s) k))
+    ) }
+    (slast s) `cadd` foldadd (SB.init (SB.length (sinit s)) (fun k -> SB.index (sinit s) k));
+  }
+
+let constseq (n: nat) (a: complex): SB.seq complex = SB.init n (fun _ -> a)
+
+let __seq_of_products_factors_scalar_right
+  (#n #m #p: pos)
+  (u: matrix complex n m) (a: complex) (v: matrix complex m p)
+  (i: under n) (j: under p)
+  : Lemma (
+    seqmult (row u i) (col (a `mscalar` v) j) `Seq.equal`
+    (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
+  )
+  = assert (
+      seqmult (row u i) (col (a `mscalar` v) j) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k)))
+    );
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k))) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k))))
+    );
+    Classical.forall_intro_3 cmult_associative;
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k)))) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
+    );
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k)))) `Seq.equal`
+      seqmult (constseq (SB.length (row u i)) a) (seqmult (row u i) (col v j))
+    )
+
+let __seq_of_products_factors_scalar_left
+  (#n #m #p: pos)
+  (u: matrix complex n m) (a: complex) (v: matrix complex m p)
+  (i: under n) (j: under p)
+  : Lemma (
+    seqmult (row (a `mscalar` u) i) (col v j) `Seq.equal`
+    (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
+  )
+  = assert (
+      seqmult (row u i) (col (a `mscalar` v) j) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k)))
+    );
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k))) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k))))
+    );
+    Classical.forall_intro_3 cmult_associative;
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k)))) `Seq.equal`
+      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
+    );
+    assert (
+      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k)))) `Seq.equal`
+      seqmult (constseq (SB.length (row u i)) a) (seqmult (row u i) (col v j))
+    )
+
+let __foldm_snoc_factors_scalar (a: complex) (s: SB.seq complex)
+  : Lemma (foldadd (seqmult (constseq (SB.length s) a) s) == a `cmult` foldadd s)
+= assert (
+    seqmult (constseq (SB.length s) a) s `Seq.equal`
+    SB.init (SB.length s) (fun k -> a `cmult` (SB.index s k))
+  );
+
+  let rec inductive_proof (a: complex) (s: SB.seq complex)
+    : Lemma
+    (requires True)
+    (ensures
+      foldadd (SB.init (SB.length s) (fun k -> a `cmult` (SB.index s k))) ==
+      a `cmult` foldadd (SB.init (SB.length s) (fun k -> SB.index s k))
+    )
+    (decreases (SB.length s))
+    = if SB.length s = 0 then ()
+      else
+        let s', lasts = sinit s, slast s in
+        let sa = SB.init (SB.length s) (fun k -> a `cmult` (SB.index s k)) in
+        calc (==) {
+          foldadd sa;
+          == { foldadd_sep sa }
+          (slast sa) `cadd` foldadd (SB.init (SB.length (sinit sa)) (fun k -> SB.index (sinit sa) k));
+          == { assert (
+            (SB.init (SB.length (sinit sa)) (fun k -> SB.index (sinit sa) k)) `Seq.equal`
+            (SB.init (SB.length s') (fun k -> a `cmult` (SB.index s' k)))
+          ) }
+          (slast sa) `cadd` foldadd (SB.init (SB.length s') (fun k -> a `cmult` (SB.index s' k)));
+          == { inductive_proof a s' }
+          (slast sa) `cadd` (a `cmult` foldadd (SB.init (SB.length s') (fun k -> SB.index s' k)));
+          == { cmult_distributes_over_cadd_left a lasts (foldadd (SB.init (SB.length s') (fun k -> SB.index s' k))) }
+          a `cmult` (lasts `cadd` foldadd (SB.init (SB.length s') (fun k -> SB.index s' k)));
+          == { assert (
+            (SB.init (SB.length s') (fun k -> SB.index s' k)) `Seq.equal`
+            (SB.init (SB.length (sinit s)) (fun k -> SB.index (sinit s) k))
+          ) }
+          a `cmult` ((slast s) `cadd` foldadd (SB.init (SB.length (sinit s)) (fun k -> SB.index (sinit s) k)));
+          == { foldadd_sep s }
+          a `cmult` foldadd s;
+          == { assert (s `Seq.equal` (SB.init (SB.length s) (fun k -> SB.index s k))) }
+          a `cmult` foldadd (SB.init (SB.length s) (fun k -> SB.index s k));
+        }
+    in
+
+  inductive_proof a s;
+
+  assert (SB.init (SB.length s) (fun k -> SB.index s k) `Seq.equal` s)
+
+let product_is_linear_scalar_right (#n #m #p: pos) (ma: matrix complex n m) (a: complex) (mb: matrix complex m p)
+  : Lemma (ma `mprod` (a `mscalar` mb) == a `mscalar` (ma `mprod` mb))
+= let proof (i: under n) (j: under p)
+    : Lemma (ijth (ma `mprod` (a `mscalar` mb)) i j == ijth (a `mscalar` (ma `mprod` mb)) i j)
+  = calc (==) {
+      ijth (ma `mprod` (a `mscalar` mb)) i j <: complex;
+      == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid ma (a `mscalar` mb) i j }
+      dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row ma i) (col (a `mscalar` mb) j);
+      == {}
+      foldadd (seqmult (row ma i) (col (a `mscalar` mb) j));
+      == {
+        __seq_of_products_factors_scalar_right ma a mb i j;
+        assert (
+          (seqmult (row ma i) (col (a `mscalar` mb) j)) `Seq.equal`
+          (seqmult (constseq (SB.length (row ma i)) a) (seqmult (row ma i) (col mb j)))
+        )
+      }
+      foldadd (seqmult (constseq (SB.length (row ma i)) a) (seqmult (row ma i) (col mb j)));
+      == { __foldm_snoc_factors_scalar a (seqmult (row ma i) (col mb j)) }
+      a `cmult` foldadd (seqmult (row ma i) (col mb j));
+      == {}
+      a `cmult` dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row ma i) (col mb j);
+      == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid ma mb i j }
+      a `cmult` ijth (ma `mprod` mb) i j <: complex;
+      == { ijth_scalar a (ma `mprod` mb) i j }
+      ijth (a `mscalar` (ma `mprod` mb)) i j <: complex;
+    } in
+
+  matrix_equiv_from_proof c_is_equiv (ma `mprod` (a `mscalar` mb)) (a `mscalar` (ma `mprod` mb)) proof;
+  equivalence_implies_provable_equality (ma `mprod` (a `mscalar` mb)) (a `mscalar` (ma `mprod` mb))
+
+let product_is_linear_scalar_left (#n #m #p: pos) (a: complex) (ma: matrix complex n m) (mb: matrix complex m p)
+  : Lemma ((a `mscalar` ma) `mprod` mb == a `mscalar` (ma `mprod` mb))
+= let proof (i: under n) (j: under p)
+    : Lemma (ijth ((a `mscalar` ma) `mprod` mb) i j == ijth (a `mscalar` (ma `mprod` mb)) i j)
+  = calc (==) {
+      ijth ((a `mscalar` ma) `mprod` mb) i j <: complex;
+      == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid (a `mscalar` ma) mb i j }
+      dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row (a `mscalar` ma) i) (col mb j);
+      == {}
+      foldadd (seqmult (row (a `mscalar` ma) i) (col mb j));
+      == {
+        __seq_of_products_factors_scalar_left ma a mb i j;
+        assert (
+          (seqmult (row (a `mscalar` ma) i) (col mb j)) `Seq.equal`
+          (seqmult (constseq (SB.length (row (a `mscalar` ma) i)) a) (seqmult (row ma i) (col mb j)))
+        )
+      }
+      foldadd (seqmult (constseq (SB.length (row (a `mscalar` ma) i)) a) (seqmult (row ma i) (col mb j)));
+      == { __foldm_snoc_factors_scalar a (seqmult (row ma i) (col mb j)) }
+      a `cmult` foldadd (seqmult (row ma i) (col mb j));
+      == {}
+      a `cmult` dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row ma i) (col mb j);
+      == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid ma mb i j }
+      a `cmult` ijth (ma `mprod` mb) i j <: complex;
+      == { ijth_scalar a (ma `mprod` mb) i j }
+      ijth (a `mscalar` (ma `mprod` mb)) i j <: complex;
+    } in
+
+  matrix_equiv_from_proof c_is_equiv ((a `mscalar` ma) `mprod` mb) (a `mscalar` (ma `mprod` mb)) proof;
+  equivalence_implies_provable_equality ((a `mscalar` ma) `mprod` mb) (a `mscalar` (ma `mprod` mb))
+
 // Because of technicalities in our inner_product definition, it is actually linear in both arguments
 // because the dagger is applied outside the inner product, so inner_product is just matrix multiplication
-
-let mprod_scalar_left (#n #m #p: pos) (a: complex) (ma: matrix complex n m) (mb: matrix complex m p)
-  : Lemma (mprod (a `mscalar` ma) mb == a `mscalar` mprod ma mb)
-= admit()
-
-let mprod_scalar_right (#n #m #p: pos) (a: complex) (ma: matrix complex n m) (mb: matrix complex m p)
-  : Lemma (mprod ma (a `mscalar` mb) == a `mscalar` mprod ma mb)
-= let proof (i: under n) (j: under p)
-    : Lemma (ijth (mprod ma (a `mscalar` mb)) i j == ijth (a `mscalar` mprod ma mb) i j) = admit() in
-  matrix_equiv_from_proof c_is_equiv (mprod ma (a `mscalar` mb)) (a `mscalar` mprod ma mb) proof;
-  equivalence_implies_provable_equality (mprod ma (a `mscalar` mb)) (a `mscalar` mprod ma mb)
-
 let inner_product_left_linearity (#n: pos) (a: complex) (u: matrix complex 1 n) (v: matrix complex n 1)
   : Lemma (inner_product (a `mscalar` u) v == a `cmult` inner_product u v)
 = calc (==) {
     inner_product (a `mscalar` u) v;
     == { () }
-    ijth (mprod (a `mscalar` u) v) 0 0;
-    == { mprod_scalar_left a u v }
+    ijth ((a `mscalar` u) `mprod` v) 0 0;
+    == { product_is_linear_scalar_left a u v }
     ijth (a `mscalar` mprod u v) 0 0;
     == { ijth_scalar (a) (mprod u v) 0 0 }
     a `cmult` ijth (mprod u v) 0 0;
@@ -571,7 +800,7 @@ let inner_product_right_linearity (#n: pos) (a: complex) (u: matrix complex 1 n)
     inner_product u (a `mscalar` v);
     == { () }
     ijth (mprod u (a `mscalar` v)) 0 0;
-    == { mprod_scalar_right a u v }
+    == { product_is_linear_scalar_right u a v }
     ijth (a `mscalar` mprod u v) 0 0;
     == { ijth_scalar (a) (mprod u v) 0 0 }
     a `cmult` ijth (mprod u v) 0 0;
@@ -623,48 +852,6 @@ let clona_todo_2 (u: operator 2) : prop =
 
 let ijth_madd (#m #n: pos) (ma mb: matrix complex m n) (i: under m) (j: under n)
   : Lemma (ijth (ma `madd` mb) i j == ijth ma i j `cadd` ijth mb i j) = ()
-
-let cmult_distributes_over_cadd_left (z w x: complex)
-  : Lemma (z `cmult` (w `cadd` x) == (z `cmult` w) `cadd` (z `cmult` x))
-= let za, zb = z in
-  let wa, wb = w in
-  let xa, xb = x in
-  calc (==) {
-    z `cmult` (w `cadd` x);
-    == { neg_applies_once_left zb (wb +. xb) }
-    za *. (wa +. xa) +. (neg zb) *. (wb +. xb),
-    za *. (wb +. xb) +. zb *. (wa +. xa);
-    == {
-      mul_dist_left za wa xa;
-      mul_dist_left (neg zb) wb xb;
-      mul_dist_left za wb xb;
-      mul_dist_left zb wa xa
-    }
-    za *. wa +. za *. xa +. (neg zb) *. wb +. (neg zb) *. xb,
-    za *. wb +. za *. xb +. zb *. wa +. zb *. xa;
-    == { neg_applies_once_left zb wb; neg_applies_once_left zb xb }
-    za *. wa -. zb *. wb +. za *. xa -. zb *. xb,
-    za *. wb +. zb *. wa +. za *. xb +. zb *. xa;
-    == {
-      mul_dist_left za wa xa;
-      mul_dist_left (neg zb) wb xb;
-      mul_dist_left za wb xb;
-      mul_dist_left zb wa xa
-    }
-    (z `cmult` w) `cadd` (z `cmult` x);
-  }
-
-let cmult_distributes_over_cadd_right (z w x: complex)
-  : Lemma ((w `cadd` x) `cmult` z == (w `cmult` z) `cadd` (x `cmult` z))
-= calc (==) {
-    (w `cadd` x) `cmult` z;
-    == { () }
-    z `cmult` (w `cadd` x);
-    == { cmult_distributes_over_cadd_left z w x }
-    (z `cmult` w) `cadd` (z `cmult` x);
-    == { () }
-    (w `cmult` z) `cadd` (x `cmult` z);
-  }
 
 // for some reason fails with implicit arguments
 // sometimes it just takes longer to solve, and sometimes it just fails?
@@ -724,105 +911,6 @@ let tensor_distributes_over_scalar (#n: pos) (a: complex) (v: qbit n) (c: qbit n
 
   matrix_equiv_from_proof c_is_equiv (v `tensorv` (a `mscalar` c)) (a `mscalar` (v `tensorv` c)) proof;
   equivalence_implies_provable_equality (v `tensorv` (a `mscalar` c)) (a `mscalar` (v `tensorv` c))
-
-// the closed propositions of left and right distributivity are needed
-// as well as absortion (but I didn't need to prove it apparently)
-// for the matrix multiplication lemma to work (a refinement of the mult monoid is used)
-let product_is_linear_1 (#n #m #p: pos) (u: matrix complex n m) (v: matrix complex m p) (w: matrix complex m p)
-  : Lemma (u `mprod` (v `madd` w) == (u `mprod` v) `madd` (u `mprod` w))
-= Classical.forall_intro_3 cmult_distributes_over_cadd_left;
-  Classical.forall_intro_3 cmult_distributes_over_cadd_right;
-
-  matrix_mul_is_left_distributive c_addition_is_comm_monoid c_multiplication_is_comm_monoid u v w;
-
-  equivalence_implies_provable_equality (u `mprod` (v `madd` w)) ((u `mprod` v) `madd` (u `mprod` w))
-
-let foldsnocs_of_equal_seqs_are_equal (#a:Type) (s1 s2 : SB.seq a)
-  (#eq : equiv a) (c : cm a eq)
-  : Lemma (requires SB.equal s1 s2) (ensures (SP.foldm_snoc c s1) == (SP.foldm_snoc c s2))
-  = ()
-
-let __seq_of_products_factors_scalar
-  (#n #m #p: pos)
-  (u: matrix complex n m) (a: complex) (v: matrix complex m p)
-  (i: under n) (j: under p)
-  : Lemma (
-    seq_of_products c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j) `Seq.equal`
-    (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
-  )
-  = assert (
-      seq_of_products c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j) `Seq.equal`
-      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k)))
-    );
-    assert (
-      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col (a `mscalar` v) j) k))) `Seq.equal`
-      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k))))
-    );
-    Classical.forall_intro_3 cmult_associative;
-    assert (
-      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (a `cmult` (SB.index (col v j) k)))) `Seq.equal`
-      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))))
-    )
-
-let __foldm_snoc_factors_scalar (s: SB.seq complex) (a: complex)
-  : Lemma (
-    SP.foldm_snoc c_addition_is_comm_monoid (SB.init (SB.length s) (fun i -> a `cmult` SB.index s i)) ==
-    a `cmult` SP.foldm_snoc c_addition_is_comm_monoid s
-  ) = admit() // TODO: last proof!
-
-let product_is_linear_2 (#n #m #p: pos) (u: matrix complex n m) (a: complex) (v: matrix complex m p)
-  : Lemma (u `mprod` (a `mscalar` v) == a `mscalar` (u `mprod` v))
-= let proof (i: under n) (j: under p)
-    : Lemma (ijth (u `mprod` (a `mscalar` v)) i j == ijth (a `mscalar` (u `mprod` v)) i j)
-  = let s  = SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))) in
-    let s' = SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)) in
-    calc (==) {
-    ijth (u `mprod` (a `mscalar` v)) i j <: complex;
-    == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid u (a `mscalar` v) i j }
-
-    dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j);
-    == {}
-
-    SP.foldm_snoc c_addition_is_comm_monoid
-      (seq_of_products c_multiplication_is_comm_monoid (row u i) (col (a `mscalar` v) j));
-
-    == { __seq_of_products_factors_scalar u a v i j }
-    SP.foldm_snoc c_addition_is_comm_monoid
-      (SB.init (SB.length (row u i)) (fun k -> a `cmult` ((SB.index (row u i) k) `cmult` (SB.index (col v j) k))));
-
-    == {
-      admit() // I don't know why this is not working
-      // __foldm_snoc_factors_scalar
-      // (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)))
-      // a;
-      // assert (
-      //   s' `Seq.equal`
-      //   (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)))
-      // )
-    }
-    a `cmult` SP.foldm_snoc c_addition_is_comm_monoid
-      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k)));
-
-    == { assert (
-      (SB.init (SB.length (row u i)) (fun k -> (SB.index (row u i) k) `cmult` (SB.index (col v j) k))) `Seq.equal`
-      (seq_of_products c_multiplication_is_comm_monoid (row u i) (col v j))
-    )}
-
-    a `cmult` SP.foldm_snoc c_addition_is_comm_monoid
-      (seq_of_products c_multiplication_is_comm_monoid (row u i) (col v j));
-    == {}
-
-    a `cmult` dot c_addition_is_comm_monoid c_multiplication_is_comm_monoid (row u i) (col v j);
-    == { matrix_mul_ijth c_addition_is_comm_monoid c_multiplication_is_comm_monoid u v i j }
-
-    a `cmult` ijth (u `mprod` v) i j <: complex;
-    == { ijth_scalar a (u `mprod` v) i j }
-
-    ijth (a `mscalar` (u `mprod` v)) i j <: complex;
-  } in
-
-  matrix_equiv_from_proof c_is_equiv (u `mprod` (a `mscalar` v)) (a `mscalar` (u `mprod` v)) proof;
-  equivalence_implies_provable_equality (u `mprod` (a `mscalar` v)) (a `mscalar` (u `mprod` v))
 
 let product_distributes_over_scalar_sum (#n: pos) (a b: complex) (v: qbit n)
   : Lemma ((a `mscalar` v) `madd` (b `mscalar` v) == (a `cadd` b) `mscalar` v)
@@ -894,12 +982,12 @@ let no_cloning_theorem_contradiction (u: operator 2)
     }
     norm (u `mprod` ((cinvsqrt2 `mscalar` (zero `tensorv` zero)) `madd` (cinvsqrt2 `mscalar` (zero `tensorv` one))));
 
-    == { product_is_linear_1 u (cinvsqrt2 `mscalar` (zero `tensorv` zero)) (cinvsqrt2 `mscalar` (zero `tensorv` one)) }
+    == { product_is_linear_addition u (cinvsqrt2 `mscalar` (zero `tensorv` zero)) (cinvsqrt2 `mscalar` (zero `tensorv` one)) }
     norm ((u `mprod` (cinvsqrt2 `mscalar` (zero `tensorv` zero))) `madd` (u `mprod` (cinvsqrt2 `mscalar` (zero `tensorv` one))));
 
     == {
-      product_is_linear_2 u cinvsqrt2 (zero `tensorv` zero);
-      product_is_linear_2 u cinvsqrt2 (zero `tensorv` one)
+      product_is_linear_scalar_right u cinvsqrt2 (zero `tensorv` zero);
+      product_is_linear_scalar_right u cinvsqrt2 (zero `tensorv` one)
     }
     norm ((cinvsqrt2 `mscalar` (u `mprod` (zero `tensorv` zero))) `madd` (cinvsqrt2 `mscalar` (u `mprod` (zero `tensorv` one))));
 
